@@ -1,0 +1,16 @@
+#!/usr/bin/env perl
+
+use lib "../my";
+use lib "lib";
+
+use Carp 'verbose';
+$SIG{ __DIE__ } = *Carp::confess;
+
+$\ = "\n";
+$" = ", ";
+$, = ", ";
+
+$0 =~ m![^/]+$!;
+chdir $` if $` ne "";
+require "my.pm";
+my::run();
