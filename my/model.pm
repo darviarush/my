@@ -264,9 +264,10 @@ END
 sub ${model}::rowset::$key {
 	my (\$self, $val) = \@_;
 	if(\@_ > 1) {
-		return \$self->{rowset}->[0];
+		\$self->{set}->{'$key'} = $val;
+		return \$self;
 	}
-	return ;
+	return \$self->{set}->{'$key'};
 }
 END
 	die $@ if $@;
@@ -893,14 +894,44 @@ package model::rowset;
 # создаёт экземпляр, вызывается с указанием класса
 #	domain - содержит домены для наборов - {dom1=>0, dom2=>1...}
 #	rowset - [[val1, val2...], [val21, val22...]...]
+#	set - текущая строка набора
+#	pos - её позиция в наборе
 #	safe - если установлен, то будет сохранять все запрошенные из базы данные в rowset
+#	
+
 sub new {
 	my ($cls, $model, $safe) = @_;
-	bless {model => $model, safe => $safe, domain => {}, rowset => []}, $cls;
+	my $set = {};
+	bless {
+		model => $model,
+		safe => $safe,
+		rowset => [$set],
+		set=>$set,
+		pos => 0,
+		sth => undef,
+		error => undef
+	}, $cls;
 }
 
-# переходит или считывает следующий. Если закончено считывание
+# переходит или считывает следующий
+#	Если закончено считывание выдаёт undef и остаётся на последнем
+#	Если просто перешёл - 2
+#	Если считал - 1
 sub next {
+	my ($self) = @_;
+	my $rowset = $self->{rowset};
+	my $pos = $self->{pos};
+	$self->{set} = $rowset->[$self->{pos} = $pos+1], return 2 if $#$rowset != $pos;
+	
+	my $sth = $self->{sth};
+	return unless $sth;
+	
+	my $set = $sth->fetch_hashref;
+	$sth->finish, $self->{sth} = undef, return unless $set;
+	@$rowset = () unless $self->{safe};
+	push @$rowset, $self->{set} = $set;
+	$self->{pos} = $#$rowset;
+	return 1;
 }
 
 # устанавливает данные из ассоциативного массива, причём только те, которые есть в таблице
@@ -908,19 +939,33 @@ sub next {
 sub set {
 	my ($self, @param) = @_;
 	
-	unless(@param) {
-	}
-	elsif(ref @param[0] eq "HASH") {
+	@param = %$request::param unless @param;
+	
+	if(ref @param[0] eq "HASH") {
+		
 	}
 	else {
+		
 	}
 	return $self;
 }
 
 # валидирует роусеты
-#	оставляет сообщение об ошибке в определённом поле error
+#	оставляет сообщения об ошибке в $self->{error}{$field} = [...]
+#	сообщения касающиеся таблицы в $self->{error}{0}
 sub validate {
 	my ($self) = @_;
+	
+	my $rowset = $self->{rowset};
+	for my $set (@$rowset) {
+		while(my ($k, $v) = each %$set) {
+			for my $validator (@{${ref($self->{model})."::$k"}->{validator}}) {
+				$validator->($v);
+				push @{$self->{error}{$k}}, $@ if $@;
+			}
+		}
+	}
+	
 	return 1;
 }
 
@@ -941,16 +986,32 @@ sub store {
 }
 
 # загружает ровсеты по id
-#	без параметров - 
+#	без параметров - всю таблицу
 sub load {
 	my ($self, @id) = @_;
-	$self->obj;
-	$self->{where} = ["id", $id] if $id;
-	$self->{set} = $model::dbh->selectrow_hashref($self->sql);
+	$self->clear;
+	@{$self->{rowset}} = $self->{set} = $model::dbh->selectrow_hashref($self->sql), return $self if @id == 1;
+	$self->{where} = ["id", @id == 1? $id: \@id];
+	$self->{rowset} = $model::dbh->prepare($self->sql);
 	return $self;
 }
 
+# очищает набор
+sub clear {
+	my ($self) = @_;
+	my $sth = $self->{sth};
+	$self->{sth} = undef, $sth->finish if $sth;
+	my $set = $self->{set} = {};
+	$self->{rowset} = [$set];
+	$self->{error} = undef;
+	return $self;
+}
 
+# устанавливает их реквеста, валидирует и сохраняет. Если были ошибки - возвращает undef
+sub save {
+	my ($self) = @_;
+	$self->store, return 1 if $self->set->validate;
+}
 
 
 package model::functor;
