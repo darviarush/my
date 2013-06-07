@@ -3,7 +3,11 @@ package rpc;
 
 use utils;
 
-%prog = ();
+%prog = (
+"perl" => "perl -Mrpc -e 'rpc->client'",
+"php" => "",
+"python" => ""
+);
 
 
 

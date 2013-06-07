@@ -6,8 +6,8 @@ use lib '../lib';
 
 use_ok "pages";
 use_ok "utils";
-use_ok "validation";
-use validation;
+use_ok "validator";
+use validator;
 
 mkdir "tmp/t";
 $tmp = "tmp/t/\$.x";

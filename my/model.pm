@@ -259,12 +259,12 @@ sub ${model}::$key {
 }
 END
 	die $@ if $@;
-	
+
 	eval << "END";
 sub ${model}::rowset::$key {
-	my (\$self, $val) = \@_;
+	my (\$self, \$val) = \@_;
 	if(\@_ > 1) {
-		\$self->{set}->{'$key'} = $val;
+		\$self->{set}->{'$key'} = \$val;
 		return \$self;
 	}
 	return \$self->{set}->{'$key'};
@@ -277,18 +277,27 @@ END
 sub init {
 	my ($cls, @paths) = @_;
 	local ($_, $`, $', $&, $1);
+	
+	@paths = @{$ini::DBI{model}} unless @paths;
+
+	print STDERR "path=@paths";
+	
 	my (@col, $col);
 	push @path, @paths;
 	for my $path (@paths) {
-		require $path;								# подключаем
-		$_ = utils::read($path);
-		while( /package\s+(\w+)\s*;/g ) {
+		my $file = utils::read($path) or die "не могу открыть файл модели `$path`. $!";
+		eval $file;
+		die $@ // $! if $@ // $!;
+		
+		while($file =~ /^package\s+(\w+)/) {
 			my $model = $1;
+			print STDERR $model;
 			push @model, $model;					# собираем названия
 			@{"${model}::rowset::ISA"} = "model::rowset" unless @{"${model}::rowset::ISA"};		# наследуем rowset
 			@{"${model}::ISA"} = "model::orm" unless @{"${model}::ISA"};		# наследуем orm
 			${"${model}::FILE"} = $path;			# пометка - из какого файла модель
 			${"${model}::id"} = "serial" unless exists ${"${model}::"}{"id"};
+			
 			my $table_name = ${"${model}::TABLE"};
 			$table_name = $model unless defined $table_name;
 			

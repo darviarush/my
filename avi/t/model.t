@@ -9,7 +9,7 @@ require_ok('model');
 
 $\ = "\n";
 
-model->connect->init("model.pl")->sync;
+model->connect->init->sync;
 
 isa_ok($model::dbh, "DBI::db");
 

@@ -23,12 +23,12 @@ sub walk_data {
 		if($class eq "ARRAY") {
 			$fn_begin->($ref, $key, 0) if $fn_begin;
 			push @scalar, [$ref, $key, 0] if $fn_end;
-			push @scalar, \(@$scalar);
+			push @scalar, reverse \(@$scalar);
 		}
 		elsif($class eq "HASH") {
 			$fn_begin->($ref, $key, 1) if $fn_begin;
 			push @scalar, [$ref, $key, 1] if $fn_end;
-			push @scalar, {$_=>\$scalar->{$_}} for %$scalar;
+			push @scalar, {$_=>\($scalar->{$_})} for keys %$scalar;
 		}
 		else {
 			$fn->($ref, $key);
@@ -40,19 +40,14 @@ sub walk_data {
 sub to_json {
 	my @s;
 	walk_data($_[0], sub {
-		my ($ref) = @_;
-		push @s, ref $ref eq "HASH"? do {
-			my ($key, $val) = %$ref;
-			json_quote($key).":".json_quote($val)
-		}: json_quote($$ref), ",";
+		my ($ref, $key) = @_;
+		push @s, (defined($key)? json_quote($key).":".json_quote($$ref): json_quote($$ref)), ",";
 	}, sub {
-		my ($ref, $class) = @_;
+		my ($ref, $key, $class) = @_;
+		push @s, json_quote($key).":" if defined $key;
 		push @s, $class == 0? "[": "{";
-		return if ref $ref ne "HASH";
-		my ($key, $val) = %$ref;
-		push @s, json_quote($key).":";
 	}, sub {
-		my ($ref, $class) = @_;
+		my ($ref, $key, $class) = @_;
 		pop @s if $s[$#s] eq ",";
 		push @s, ($class == 0? "]": "}"), ",";
 	});

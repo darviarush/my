@@ -12,7 +12,8 @@ package ini;
 %DBI = (			# конфигурация базы данных
 	DNS => 'dbi:SQLite:database=base1.sqlite', #'dbi:Pg:database=my',
 	user => 'my',
-	password => 'mypass'
+	password => 'mypass',
+	model => ['model.pl']
 );
 %session = (
 	time_clear => 3600,

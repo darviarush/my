@@ -26,9 +26,8 @@ sub valid (@) {
 #		regex - регулярное выражение
 #		message - сообщение
 #		fn - функция perl, должна установить $@ в сообщение в случае ошибки, может модифицировать 1-й параметр
-#		fn_ret - функция perl, возвращает message в случае ошибки, или 1 - тогда подставляется message
 #		fn_replace - функция, через которую пропускается значение
-#		js - код на javascript. x - значение. Может быть изменено.
+#		js - код на javascript. a - значение. Может быть изменено. Сообщение об ошибке оставлять в msg
 #		js_replace - функция, через которую нужно пропустить значение
 #		
 %VALIDATOR = (
@@ -41,37 +40,98 @@ sub valid (@) {
 		message => "Пароль должен быть не менее 6 и не более 32 символов"
 	},
 	int => {
-		fn_replace => \&int;
+		fn_replace => \&int,
 		js_replace => "parseInt"
 	},
 	double => {
 		fn => sub { $_[0]+=0 },
-		js => 'x = parseFloat(x); return true'
+		js => 'a = parseFloat(a); msg = true'
 	}
 );
 
-add(%VALIDATOR);
+validator->add(%VALIDATOR);
 
+# добавляет валидаторы в %VALIDATOR
 sub add {
-	for(my $k = 0; $k<@_; $k+=2) {
-		my $name = $k;
-		my $u = $_[$k+1];
+	for(my $k = 1; $k<@_; $k+=2) {	# пропускаем класс
+		my $name = $_[$k];
+		my $v = $_[$k+1];
 		
-		$VALIDATOR{$name} = $u;
-		my $message = $u->{message} // "Нет параметра";
-		if($u->{regex}) { 
-			$message =~ s/['\\]/\\$&/g;
-			eval "sub $name { \$@ = '$message' unless \$_[0] =~ m{$u->{regex}} }";
+		print STDERR "$name $v $k\n";
+		
+		$VALIDATOR{$name} = $v;
+		my $message = $v->{message} // "Нет параметра";
+		my $regex = $v->{regex};
+		my $replace = $v->{fn_replace};
+		my $fn = $v->{fn};
+		if($regex and $replace and $fn) {
+			my $adder = sub {
+				my ($regex, $replace, $fn, $message) = @_;
+				sub {
+					$_[0] = $replace->($_[0]);
+					$fn->($_[0]);
+					$@ = $message unless $_[0] =~ $regex;
+				}
+			};
+			$validator = $adder->($regex, $replace, $fn, $message);
 		}
-		elsif($u->{fn}) { *{"validator::$name"}{CODE} = $u->{fn} }
+		elsif($regex and $replace) {
+			my $adder = sub {
+				my ($regex, $replace, $message) = @_;
+				sub {
+					$_[0] = $replace->($_[0]);
+					$@ = $message unless $_[0] =~ $regex;
+				}
+			};
+			$validator = $adder->($regex, $replace, $message);
+		}
+		elsif($regex and $fn) {
+			my $adder = sub {
+				my ($regex, $fn, $message) = @_;
+				sub {
+					$fn->($_[0]);
+					$@ = $message unless $_[0] =~ $regex;
+				}
+			};
+			$validator = $adder->($regex, $fn, $message);
+		}
+		if($replace and $fn) {
+			my $adder = sub {
+				my ($replace, $fn) = @_;
+				sub {
+					$_[0] = $replace->($_[0]);
+					$fn->($_[0]);
+				}
+			};
+			$validator = $adder->($replace, $fn);
+		}
+		elsif($fn) { $validator = $fn }
+		elsif($replace) {
+			my $adder = sub {
+				my ($replace) = @_;
+				sub { $_[0] = $replace->($_[0]) }
+			};
+			$validator = $adder->($replace);
+		}
+		elsif($regex) {
+			my $adder = sub {
+				my ($regex, $message) = @_;
+				sub { $@ = $message unless $_[0] =~ $regex }
+			};
+			$validator = $adder->($regex, $message);
+		}
 		else {
 			die "Нет параметра для валидации. Валидатор `$name`";
 		}
+		
+		*{"validator::$name"} = $validator;
 	}
 }
 
-# генерирует JavaScript-валидаторы
-sub add_js {
+# генерирует JavaScript-валидатор
+sub for_js {
+	my ($cls, $name) = @_;
+	my $v = $VALIDATOR{$name};
 	
 }
 
