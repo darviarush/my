@@ -302,10 +302,11 @@ sub init {
 			#$TABLE2MODEL{$table} = $model;				# отображение таблиц в модели
 			
 			while(my($key, $val) = each %{"${model}::"}) {	# формируем методы столбцов и заменяем значения на model::column
+				next if $key =~ /^[A-Z_0-9]+$/;	# отбрасываем служебные столбцы
 				my (@param) = (${"${model}::$key"} or (), @{"${model}::$key"});
 				@{"${model}::$key"} = ();
 				my $type = $param[0];
-				next if not defined $type or $key =~ /^[A-Z_0-9]+$/;	# отбрасываем служебные столбцы
+				next if not defined $type;	# пропускаем столбцы помеченные, как не существующие
 				
 				${"${model}::$key"} = ${"${model}::COLUMN"}{$key} = $col = model::column->load($model, $key, $table, @param);
 				push @col, $col;
@@ -326,6 +327,7 @@ sub init {
 	}
 
 	$_->post(), ${"$_->{model}::COLUMN_BY_NAME"}{$_->{name}} = $_ for @col;
+	
 	return model;
 }
 
@@ -340,7 +342,7 @@ sub handle_drop_tables { "drop table ".join(", ", map { escape($_) } @_)." casca
 # синхронизирует модель
 sub sync {
 	model->sync_sql;
-	print(STDERR $_), $model::dbh->do($_) for @change;
+	$model::dbh->do($_) for @change;
 	return model;
 }
 

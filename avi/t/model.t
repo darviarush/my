@@ -12,11 +12,14 @@ $\ = "\n";
 model->connect->init->sync;
 
 isa_ok($model::dbh, "DBI::db");
+isa_ok($language::TABLE, "model::table");
+is($language::rowset::ISA[0], "model::rowset");
+is($language::ISA[0], "model::orm");
 
 $model::dbh->do("BEGIN");
 $SIG{__DIE__} = sub { $model::dbh->do("ROLLBACK"); };
 
-$language_id = language->insert(id=>"BK", name=>"x1");
+$language_id = language->domain("id")->insert(id=>"BK", name=>"x1");
 is($language_id, "BK");
 
 $name_id = name->insert();
