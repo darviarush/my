@@ -10,7 +10,7 @@ package ini;
 	test => 1
 );
 %DBI = (			# конфигурация базы данных
-	DNS => 'dbi:SQLite:database=test.sqlite',	#dbi:Pg:database=my_test',
+	DNS => 'dbi:SQLite:database=:memory:',	#dbi:Pg:database=my_test', #test.sqlite
 	user => '',
 	password => '',
 	model => ["../model.pl"]

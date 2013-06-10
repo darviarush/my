@@ -58,8 +58,8 @@ sub handle_type_serial {
 
 sub handle_type_bigserial {
 	my ($self) = @_;
-	$self->{type} = "int8";
-	$self->{ref_type} = "int8";
+	$self->{type} = "integer";
+	$self->{ref_type} = "integer";
 	$self->{option} = "AUTOINCREMENT";
 }
 

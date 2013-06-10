@@ -94,7 +94,7 @@ sub new {
 sub load {
 	my ($cls, $model, $key, $table, @param) = @_;
 	
-	my $self = { model => $model, key => $key };
+	my $self = { model => $model, key => $key, table => $table };
 	my $i = 0;
 	for my $param (@param) {
 		if(ref \$param eq "GLOB") {
@@ -279,19 +279,15 @@ sub init {
 	local ($_, $`, $', $&, $1);
 	
 	@paths = @{$ini::DBI{model}} unless @paths;
-
-	print STDERR "path=@paths";
 	
 	my (@col, $col);
 	push @path, @paths;
 	for my $path (@paths) {
 		my $file = utils::read($path) or die "не могу открыть файл модели `$path`. $!";
-		eval $file;
-		die $@ // $! if $@ // $!;
-		
-		while($file =~ /^package\s+(\w+)/) {
+		require $path;
+
+		while($file =~ /^package\s+(\w+)/gm) {
 			my $model = $1;
-			print STDERR $model;
 			push @model, $model;					# собираем названия
 			@{"${model}::rowset::ISA"} = "model::rowset" unless @{"${model}::rowset::ISA"};		# наследуем rowset
 			@{"${model}::ISA"} = "model::orm" unless @{"${model}::ISA"};		# наследуем orm
@@ -344,7 +340,7 @@ sub handle_drop_tables { "drop table ".join(", ", map { escape($_) } @_)." casca
 # синхронизирует модель
 sub sync {
 	model->sync_sql;
-	$model::dbh->do($_) for @change;
+	print(STDERR $_), $model::dbh->do($_) for @change;
 	return model;
 }
 
@@ -1016,12 +1012,19 @@ sub clear {
 	return $self;
 }
 
-# устанавливает их реквеста, валидирует и сохраняет. Если были ошибки - возвращает undef
+# устанавливает из реквеста, валидирует и сохраняет. Если были ошибки - возвращает undef
 sub save {
 	my ($self) = @_;
 	$self->store, return 1 if $self->set->validate;
 }
 
+
+# возвращает rowset с указанными записями
+sub get {
+	my ($self, @idx) = @_;
+	
+	return ;
+}
 
 package model::functor;
 
