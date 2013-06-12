@@ -250,11 +250,11 @@ sub ${model}::$key {
 	my (\$self) = \@_;
 	\$self->obj;
 	if(\@_>1) {
-		delete \$self->{domain};
+		delete \$self->{dom};
 		push \@{\$self->{set}}, '$key', \$_[1];
 		return \$self;
 	}
-	\$self->{domain}->[0] .= \$self->{domain}->[0] ne ''? '::$key': $key;
+	\$self->{dom}->[0] .= \$self->{dom}->[0] ne ''? '::$key': $key;
 	return $ret;
 }
 END
@@ -334,6 +334,7 @@ sub init {
 # Константы для синхронизации
 $CHANGE_COLUMN_LEVEL_TABLE = 0;
 $CHANGE_COLUMN_LEVEL_COLUMN = 0;
+$RETURNING = 1;						# позволяет добавлять RETURNING в INSET, UPDATE и DELETE
 
 
 # возвращает sql-код для удаления таблиц
@@ -598,18 +599,18 @@ sub where {
 sub values {
 	my ($self, $ref) = @_;
 	local $_;
-	my $domain = $self->{domain};
-	my $alias = $self->{alias};
-	return "" unless @$domain | @$alias;
-	my $x = join ", ", map({ escape_dom($_, $ref) } @$domain), map {quote($_->[0], $ref)." as ".escape($_->[1])} build_alias($alias);
+	my $dom = $self->{dom};
+	my $as = $self->{as};
+	return "" unless @$dom | @$as;
+	my $x = join ", ", map({ escape_dom($_, $ref) } @$dom), map {quote($_->[0], $ref)." as ".escape($_->[1])} build_alias($as);
 	return $x;
 }
 
-# формирует alias и set
+# формирует as и set
 sub build_alias {
-	my ($alias) = @_;
+	my ($as) = @_;
 	my ($i, $val);
-	map { if($i++ % 2 == 0) { $val = $_; () } else { [$val, $_] } } @$alias;
+	map { if($i++ % 2 == 0) { $val = $_; () } else { [$val, $_] } } @$as;
 }
 
 # возвращает имена столбцов
@@ -617,8 +618,8 @@ sub names {
 	my ($self, $ref) = @_;
 	local $_;
 	my $i = 0;
-	join ", ", (map { my @A = split "::", $_; escape($A[$#A]) } @{$self->{domain}},
-		map { $i++ % 2==0? escape_dom($_, $ref): () } @{$self->{alias}});
+	join ", ", (map { my @A = split "::", $_; escape($A[$#A]) } @{$self->{dom}},
+		map { $i++ % 2==0? escape_dom($_, $ref): () } @{$self->{as}});
 }
 
 # оборачивает в '' значение, или вызывает select
@@ -626,7 +627,7 @@ sub quote {
 	my ($val, $ref) = @_;
 	ref $val eq "SCALAR"? escape_dom($$val, $ref):
 	ref $val eq "ARRAY"? "(".join(", ", map { quote($_, $ref) } @$val).")":
-	ref $val && $val->isa("model::orm")? (%$val == 2 && @{$val->{domain}}==1? escape_dom($val->{domain}->[0], $ref): "(".$val->sql.")"):
+	ref $val && $val->isa("model::orm")? (%$val == 2 && @{$val->{dom}}==1? escape_dom($val->{dom}->[0], $ref): "(".$val->sql.")"):
 	ref $val && $val->isa("model::functor")? functor2sql($val, $ref):
 	$val=~/^-?\d+(?:\.\d+)?\z/? $val:
 	$dbh->quote($val);
@@ -667,12 +668,27 @@ sub is_orm {
 # вызывает соответствующую функцию dbh для запросов update, insert с returning и без
 sub do {
 	my ($self, $sql) = @_;
-	my $size = @{$self->{domain}} + @{$self->{alias}} / 2;
+	my $size = @{$self->{dom}} + @{$self->{as}} / 2;
 	my $many_set = ref $self->{set}->[0] eq "ARRAY";
 	
-	if($size == 0) { return $dbh->do($sql) }
-	elsif($size > 1 and $many_set) { return $dbh->selectall_arrayref($sql) }
-	elsif($size == 1 and $many_set) { return $dbh->selectcol_arrayref($sql)	}
+	print STDERR $sql;
+	
+	unless($RETURNING) {
+		my $count = $dbh->do($sql);
+		return $count unless $size;
+		
+		my $model = ref $self;
+		$model->obj;
+		$model->{dom} = $self->{dom};
+		$model->{as} = $self->{as};
+		$sql = $model->sql;
+		$sql .= " where rowid=last_insert_rowid()";
+		print STDERR $sql;
+	}
+	else { return $dbh->do($sql) unless $size }
+	
+	return $dbh->selectall_arrayref($sql) if $size > 1 and $many_set;
+	return $dbh->selectcol_arrayref($sql) if $size == 1 and $many_set;
 	return $dbh->selectrow_array($sql);
 }
 
@@ -692,16 +708,16 @@ sub obj {
 }
 
 # регистрирует столбцы в select
-sub domain {
+sub dom {
 	my ($self, @param) = @_;
-	$self->obj->{domain} = [@param];
+	$self->obj->{dom} = [@param];
 	return $self;
 }
 
 # регистрирует столбцы с алиасами (as)
-sub alias {
+sub as {
 	my ($self, @param) = @_;
-	$self->obj->{alias} = [@param];
+	$self->obj->{as} = [@param];
 	return $self;
 }
 
@@ -809,8 +825,7 @@ sub insert {
 	my ($self, @param) = @_;
 	$self->obj;
 	push @{$self->{set}}, @param;
-	my $sql = $self->isql;
-	return model::do($self, $sql);
+	return model::do($self, $self->isql);
 }
 
 # update - поле-значение, значением может быть запрос
@@ -823,7 +838,7 @@ sub update {
 
 # delete - удаляет строки
 sub erase {
-	my ($self, @param) = @_;
+	my ($self) = @_;
 	$self->obj;
 	return model::do($self, $self->esql);
 }
@@ -873,14 +888,14 @@ sub isql {
 	}	
 	
 	my $values = model::values($self);
-	$sql .= " returning $values" if $values ne "";
+	$sql .= " returning $values" if $model::RETURNING and $values ne "";
 	return $sql;
 }
 
 # возвращает запрос update
 sub usql {
 	my ($values, $set, @any) = model::select(@_);
-	push @any, "returning $values" if $values ne "";
+	push @any, "returning $values" if $model::RETURNING and $values ne "";
 	my $sql = join " ", "update", ${ref($self)."::TABLE"}->name, "set", $set, grep {$_ ne ""} @any;
 	return $sql;
 }
@@ -888,7 +903,7 @@ sub usql {
 # возвращает запрос delete
 sub esql {
 	my ($values, @any) = model::select(@_);
-	push @any, "returning $values" if $values ne "";
+	push @any, "returning $values" if $model::RETURNING and $values ne "";
 	my $sql = join " ", "delete", grep {$_ ne ""} @any;
 	return $sql;
 }
@@ -899,7 +914,7 @@ sub esql {
 package model::rowset;
 
 # создаёт экземпляр, вызывается с указанием класса
-#	domain - содержит домены для наборов - {dom1=>0, dom2=>1...}
+#	dom - содержит домены для наборов - {dom1=>0, dom2=>1...}
 #	rowset - [[val1, val2...], [val21, val22...]...]
 #	set - текущая строка набора
 #	pos - её позиция в наборе
@@ -943,12 +958,24 @@ sub next {
 
 # устанавливает данные из ассоциативного массива, причём только те, которые есть в таблице
 #	Без параметров устанавливает параметры из request
+#	Параметры:
+#		name => val
+#		name => [val1...], ...
+#		{name => val}
+#		[{name => val, ...}, ...]
+#		[[name, ...], [val ...], ...]
 sub set {
 	my ($self, @param) = @_;
 	
+	$self->{pos} = 0;
+	
 	@param = %$request::param unless @param;
 	
-	if(ref @param[0] eq "HASH") {
+	if(ref $param[0] eq "HASH") {
+		$self->{set} = $param[0];
+		$self->{rowset} = [$param[0]];
+	}
+	elsif(ref $param eq "ARRAY") {
 		
 	}
 	else {
@@ -983,7 +1010,7 @@ sub store {
 
 	my %arg = @{$self->{set}};
 	unless(exists $arg{"id"}) {
-		$self->{domain} = "id";
+		$self->{dom} = "id";
 		$arg{id} = $self->insert;
 	}
 	push @{$self->{where}}, "id", $arg{id};

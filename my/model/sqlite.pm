@@ -1,6 +1,7 @@
 
-# в sqlite нет 
-$model::CHANGE_COLUMN_LEVEL_TABLE = 1;
+
+$CHANGE_COLUMN_LEVEL_TABLE = 1;		# в sqlite нет alter column, только alter table
+$RETURNING = 0;						# в sqlite нет RETURNING
 
 # запускается после коннекта
 sub handle_connect {

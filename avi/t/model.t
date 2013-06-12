@@ -19,23 +19,23 @@ is($language::ISA[0], "model::orm");
 $model::dbh->do("BEGIN");
 $SIG{__DIE__} = sub { $model::dbh->do("ROLLBACK"); };
 
-$language_id = language->domain("id")->insert(id=>"BK", name=>"x1");
+$language_id = language->dom("id")->insert(id=>"BK", name=>"x1");
 is($language_id, "BK");
 
-$name_id = name->insert();
-ok($name_id);
+$name_id = name->id->insert;
+is($name_id, 1);
 
-$namen_id = namen->insert(language=>[id=>"IX", name=>"x3"], name=>[], iname=>"Ок2");
+$namen_id = namen->id->insert(language=>[id=>"IX", name=>"x3"], name=>[], iname=>"Ок2");
 ok($namen_id);
 
-$namen_id = namen->insert(language_id=>$language_id, name_id=>$name_id, iname=>"Ок");
+$namen_id = namen->id->insert(language_id=>$language_id, name_id=>$name_id, iname=>"Ок");
 ok($namen_id);
 
-$sql = namen->filter(id=>$namen_id)->domain(qw/language_id name_id iname/);
-$namen_id = namen->insert($sql);
+$sql = namen->filter(id=>$namen_id)->dom(qw/language_id name_id iname/);
+$namen_id = namen->id->insert($sql);
 ok($namen_id, 'namen_id last');
 
-$row = language->domain(id, name)->insert([['PK', 'r1'], ['BB', 'r2']]);
+$row = language->id->insert([[id, name], ['PK', 'r1'], ['BB', 'r2']]);
 is_deeply($row, ['PK', 'BB']);
 
 $rows = $sql->all;
@@ -67,10 +67,10 @@ $city_id = $city->id->row;
 ok($city_id);
 is(ref $city_id, "");
 
-$col = $city->domain()->name->namen_ref->language->id->col;
+$col = $city->dom()->name->namen_ref->language->id->col;
 is_deeply($col, ['BK']);
 
-$q = city->filter(name::namen_ref::language::name => 'x1')->domain("name::namen_ref::language::*", "name::namen_ref::*", "name::*", "*");
+$q = city->filter(name::namen_ref::language::name => 'x1')->dom("name::namen_ref::language::*", "name::namen_ref::*", "name::*", "*");
 $all = $q->all;
 is(scalar @$all, 2);
 is(scalar @{$all->[0]}, 9);
