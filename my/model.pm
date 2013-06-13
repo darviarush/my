@@ -843,6 +843,21 @@ sub erase {
 	return model::do($self, $self->esql);
 }
 
+# insert или update, если есть
+sub store {
+	my ($self, @param) = @_;
+	$self->obj;
+	push @{$self->{set}}, @param;
+	
+
+	my $set = $self->{set};
+	
+	
+	
+	
+	return model::do($self, $self->esql);
+}
+
 # возвращает запрос select
 sub sql {
 	my ($self, $ref) = @_;
@@ -871,8 +886,7 @@ sub isql {
 	elsif(@$set == 1 and model::is_orm($set->[0])) {
 		my $q = $set->[0];
 		my $values = model::names($q);
-		my $select = $q->sql;
-		$sql = "insert into $table ($values) $select";
+		$sql = "insert into $table ($values) ".$q->sql;
 	}
 	else {	
 		my ($col, $let);
@@ -915,20 +929,20 @@ package model::rowset;
 
 # создаёт экземпляр, вызывается с указанием класса
 #	dom - содержит домены для наборов - {dom1=>0, dom2=>1...}
+#	col - домены последовательно []
 #	rowset - [[val1, val2...], [val21, val22...]...]
-#	set - текущая строка набора
-#	pos - её позиция в наборе
+#	pos - позиция текущией строки в наборе
 #	safe - если установлен, то будет сохранять все запрошенные из базы данные в rowset
 #	
 
 sub new {
 	my ($cls, $model, $safe) = @_;
-	my $set = {};
 	bless {
 		model => $model,
 		safe => $safe,
+		col => [],
+		dom => {},
 		rowset => [$set],
-		set=>$set,
 		pos => 0,
 		sth => undef,
 		error => undef
@@ -942,8 +956,7 @@ sub new {
 sub next {
 	my ($self) = @_;
 	my $rowset = $self->{rowset};
-	my $pos = $self->{pos};
-	$self->{set} = $rowset->[$self->{pos} = $pos+1], return 2 if $#$rowset != $pos;
+	$self->{pos}++, return 2 if $#$rowset != $self->{pos};
 	
 	my $sth = $self->{sth};
 	return unless $sth;
@@ -964,6 +977,8 @@ sub next {
 #		{name => val}
 #		[{name => val, ...}, ...]
 #		[[name, ...], [val ...], ...]
+#
+#		в cols[]
 sub set {
 	my ($self, @param) = @_;
 	
@@ -1055,42 +1070,37 @@ sub get {
 	return ;
 }
 
+# используется для всктавки в sql произвольного текста
+package model::raw;
+
+# конструктор
+sub new {
+	my ($cls, $val) = @_;
+	bless \$val, $cls;
+}
+
 package model::functor;
 
 # возвращает функтор
 sub model::functor {
 	#print STDERR "echo -------------->model::functor--";
-	bless {}, model::functor;
-}
-
-sub model::functor2sql {
-	my ($x, $ref) = @_;
-	print STDERR "echo functor2sql const=$x->{const} name=$x->{name} args=$x->{args} op=$x->{op} left=$x->{left} right=$x->{right}\n";
-	return quote($x->{const}, $ref) if exists $x->{const};
-	return "$x->{name}(".join(", ", map {quote($_, $ref)} $x->{args}).")" if exists $x->{name};
-	return functor2sql($x->{left})." $x->{op} ".functor2sql($x->{right});
+	bless [map { ref $_ eq "model::functor"? @$_: $_ } @_], model::functor;
 }
 
 
 BEGIN {
 	$nigma = sub {
-		my ($opname, $self, $x, $swap) = @_;
+		my ($operator, $self, $operand, $swap) = @_;
 
-		print STDERR "xxx=".ref($x);
-		print STDERR "echo nigma `$opname` $self->{name}$self->{func}$self->{op}  x=$x swap=$swap";
-
-		my $op = model::functor();
-		my $r;
-		$r = model::functor(), $r->{const} = $x, $x = $r unless ref($x) and (ref($x) eq model::functor or $x->isa("model::orm"));
-		$op->{op} = $opname;
-		if($swap) {
-			$op->{left} = $x;
-			$op->{right} = $self;
-		} else {
-			$op->{left} = $self;
-			$op->{right} = $x;
+		print STDERR "nigma $operator ->".@$self." swap=$swap";
+		
+		if(ref $operand eq "model::functor") {
+			if($swap) {	push @$self, $operator, @$operand } else { unshift @$self, @$operand, $operator }
+		else {
+			if($swap) {	push @$self, $operator, $operand } else { unshift @$self, $operand, $operator }
 		}
-		return $op;
+		
+		return $self;
 	}
 }
 
@@ -1112,18 +1122,15 @@ use overload (
 	">" => sub { unshift @_, ">"; goto &$nigma; },
 	"<=" => sub { unshift @_, "<="; goto &$nigma; },
 	">=" => sub { unshift @_, ">="; goto &$nigma; },
-	'""' => sub { "mx=`$_[1]`  model::functor(".model::functor2sql($_[0]).")" },
+	'""' => sub { "mx=`$_[1]`  model::functor(".@{$_[0]}.")" },
 );
 
 # для вставки функций в sql
 sub AUTOLOAD {
 	print STDERR "echo $AUTOLOAD\n";
-	my ($self, @args) = @_;
-	my $func = model::functor;
+	local ($&, $`, $');
 	$AUTOLOAD =~ /[^:]+$/;
-	$func->{name} = $&;
-	$func->{args} = [@args];
-	return $func;
+	return model::functor(model::raw->new("$&("), @_, model::raw->new(")"));
 }
 
 sub DESTROY {}
