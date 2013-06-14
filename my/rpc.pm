@@ -9,7 +9,7 @@ use utils;
 
 %prog = (
 "perl" => "perl -Mrpc -e 'rpc->client'",
-"php" => "",
+"php" => "php -r 'require_once \"rpc.php\"; rpc->client()'",
 "python" => "",
 "ruby" => ""
 );
@@ -24,7 +24,7 @@ sub new {
 	binmode $reader;
 	binmode $writer;
 	
-	bless {r => $reader, w => $writer, prog => $prog, objects => [], bless => "\0bless\0", stub => "\0stub\0", role => "server"}, $cls;
+	bless {r => $reader, w => $writer, prog => $prog, objects => [], bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
 }
 
 # закрывает соединение
@@ -39,10 +39,13 @@ sub close {
 # создаёт клиента
 sub client {
 	my ($cls) = @_;
-	my $self = bless {r => \*STDIN, w => \*STDOUT, objects => [], bless => "\0stub\0", stub => "\0bless\0", role => "client"}, $cls;
-	select STDIN; $| = 1;
-	select STDOUT; $| = 1;
-	warn "client $$\n";
+	open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
+	open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
+	my $self = bless {r => $r, w => $w, objects => [], bless => "\0stub\0", stub => "\0bless\0", role => "CLIENT"}, $cls;
+	select $r; $| = 1;
+	select $w; $| = 1;
+	open STDIN, "/dev/null";
+	open STDOUT, "< /dev/null";
 	$self->ret;
 }
 
@@ -155,9 +158,7 @@ sub ret {
 		$args = $self->unpack($arg);
 		#chop $arg;
 		#chop $ret;
-		print STDERR "1. $self->{role} ret=${ret}2. $arg";
-		print STDERR "3. ".Dumper($args)."\n";
-	
+		
 		last if $ret eq "ok\n";
 	
 		chop $ret;

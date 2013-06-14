@@ -1,4 +1,4 @@
-use Test::More tests => 15;
+use Test::More tests => 9;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;
@@ -8,10 +8,10 @@ use lib '../../my';
 use lib '../lib';
 
 use_ok "rpc";
+use_ok "utils";
 
 $rpc = rpc->new("perl");
 
-=pod
 
 $a = $rpc->unpack('{"f":["x",1]}');
 is_deeply($a, {"f"=>["x",1]});
@@ -26,21 +26,19 @@ ok($pwd);
 
 $dump = $rpc->call("Dumper", [1]);
 is($dump, "\$VAR1 = [\n          1\n        ];\n");
-=cut
+
 $rpc->eval("use CGI;");
-warn "eval xxx use";
+
 $cgi = $rpc->apply("CGI", "new");
-warn "objects=".Dumper($rpc->{objects});
-warn "dumper=".Dumper($cgi);
 $h1 = $cgi->h1('hello world');
 is($h1, '<h1>hello world</h1>');
 
 
 $header = $cgi->header;
-is($header, "");
+is($header, "Content-Type: text/html; charset=ISO-8859-1\r\n\r\n");
 
 $header = $cgi->header(-type=>'image/gif',-expires=>'+3d');
-is($header, "");
+like($header, qr/Content-Type: image\/gif/);
 
 $rpc->close;
 

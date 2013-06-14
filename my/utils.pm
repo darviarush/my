@@ -7,7 +7,7 @@ use Data::Dumper;
 sub walk_data {
 	my ($scalar, $fn, $fn_begin, $fn_end) = @_;
 	my ($k, $v);
-	my @scalar = (\$scalar);
+	my @scalar = (\$_[0]);
 
 	while(@scalar) {
 		my $ref = pop @scalar;
