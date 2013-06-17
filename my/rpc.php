@@ -2,215 +2,194 @@
 
 class RPC {
 
-static $prog = array(
-"perl" => "perl -Mrpc -e 'rpc->client'",
-"php" => "php -r 'require_once \"rpc.php\"; rpc->client()'",
-"python" => "",
-"ruby" => ""
-);
+	static $prog = array(
+		"perl" => "perl -Mrpc -e 'rpc->client'",
+		"php" => "php -r 'require_once \"rpc.php\"; rpc->client()'",
+		"python" => "",
+		"ruby" => ""
+	);
+
+	public $r, $w, $objects, $prog, $bless, $stub, $role, $process;
 
 
 
-# конструктор
-function __construct() {
-}
+	# конструктор. Создаёт соединение
+	function __construct($prog = null) {
 
-function run($prog) {
-	
-	
-	open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
-	binmode $reader;
-	binmode $writer;
-	
-	bless {r => $reader, w => $writer, prog => $prog, objects => [], bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
-}
-
-# закрывает соединение
-function close() {
-	my $w = $self->{w};
-	print $w "ok\nnull\n";
-	close $w, $self->{r};
-}
-
-# создаёт клиента
-sub client {
-	my ($cls) = @_;
-	open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
-	open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
-	my $self = bless {r => $r, w => $w, objects => [], bless => "\0stub\0", stub => "\0bless\0", role => "CLIENT"}, $cls;
-	select $r; $| = 1;
-	select $w; $| = 1;
-	open STDIN, "/dev/null";
-	open STDOUT, "< /dev/null";
-	$self->ret;
-}
-
-# квотирует для передачи
-sub json_quote {
-	my ($self, $val) = @_;
-	if(ref $val eq "rpc::stub") {
-		$val = "{".utils::json_quote($self->{stub}).":$val->{num}}";
-	} elsif(ref $val) {
-		my $objects = $self->{objects};
-		push @$objects, $val;
-		$val = "{".utils::json_quote($self->{bless}).":$#$objects}";
-	}
-	else { $val = utils::json_quote($val) }
-	return $val;
-}
-
-# превращает в json и сразу отправляет. Объекты складирует в $self->{objects}
-sub pack {
-	my ($self, $data, $cmd) = @_;
-	local ($,, $\) = ();
-	my $pipe = $self->{w};
-	my ($so, $flag) = (0, 1);
-	
-	print $pipe $cmd if defined $cmd;
-	
-	utils::walk_data($data, sub {
-		my ($ref, $key) = @_;
-		print $pipe "," if $flag and $so;
-		$flag = 1;
-		print $pipe utils::json_quote($key), ":" if defined $key;
-		print $pipe $self->json_quote($$ref);
-	}, sub {
-		my ($ref, $key, $class) = @_;
-		print $pipe "," if $so++ and $flag;
-		print $pipe utils::json_quote($key), ":" if defined $key;
-		print $pipe $class == 0? "[": "{";
-		$flag = 0;
-	}, sub {
-		my ($ref, $key, $class) = @_;
-		print $pipe $class == 0? "]": "}";
-		$so--;
-		$flag = 1;
-	});
-	
-	print $pipe "\n";
-}
-
-# распаковывает
-sub unpack {
-	my ($self, $data) = @_;
-
-	$data = utils::from_json($data);
-	my $objects = $self->{objects};
-	my $bless = $self->{bless};
-	my $stub = $self->{stub};
-	
-	utils::walk_data($data, sub {}, sub {
-		my ($ref, $key, $hash) = @_;
-		return unless $hash;
+		if($prog === null) return $this->client();
 		
-		my $num;
-		my $val = $$ref;
+		$descriptorspec = array(
+			4 => array("pipe", "r"),// stdin это канал, из которого потомок будет читать
+			5 => array("pipe", "w"),// stdout это канал, в который потомок будет записывать
+			#2 => array("file", "/tmp/error-output.txt", "a"), // stderr это файл для записи
+		);
 		
-		if(defined($num = $val->{$stub})) {
-			$$ref = $self->stub($num);
-		}
-		elsif(defined($num = $val->{$bless})) {
-			$$ref = $objects->[$num];
-		}		
-	});
-	
-	return $data;
-}
-
-# вызывает функцию
-sub call {
-	my ($self, $name, @args) = @_;
-	$self->pack(\@args, "call $name ".(wantarray?1:0)."\n");
-	$self->ret(@_);
-}
-
-# вызывает метод
-sub apply {
-	my ($self, $class, $name, @args) = @_;
-	$self->pack(\@args, "apply $class $name ".(wantarray?1:0)."\n");
-	$self->ret(@_);
-}
-
-# выполняет код
-sub eval {
-	my ($self, $eval, @args) = @_;
-	local ($,, $\) = ();
-	my $pipe = $self->{w};
-	$self->pack(\@args, "eval ".(wantarray?1:0)."\n");
-	print $pipe pack("L", length $eval), $eval;
-	$self->ret(@_);
-}
-
-# получает и возвращает данные и устанавливает ссылочные параметры
-sub ret {
-	my ($self) = @_;
-	local ($,, $\) = ();
-	my $pipe = $self->{r};
-	my (@ret, $args);
-	
-	for(;;) {	# клиент послал запрос
-		my $ret = <$pipe>;
-		my $arg = scalar <$pipe>;
-		$args = $self->unpack($arg);
-		#chop $arg;
-		#chop $ret;
+		$prog = isset(self::$prog[$prog])? self::$prog[$prog]: $prog;
 		
-		last if $ret eq "ok\n";
-	
-		chop $ret;
+		$process = proc_open($prog, $descriptorspec, $pipe);
+		if(!is_resource($process)) throw new RPCException("RPC not started"); 
+	// $pipes выглядит теперь примерно так:
+	// 0 => записываемый дескриптор, соединённый с дочерним stdin
+	// 1 => читаемый дескриптор, соединённый с дочерним stdout
+	// Любой вывод ошибки будет присоединён к /tmp/error-output.txt
 		
-		my ($cmd, $arg1, $arg2, $arg3) = split / /, $ret;
-		if($cmd eq "stub") {
-			if($arg3) { @ret = $self->{objects}->[$arg1]->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-			else { $self->pack(scalar $self->{objects}->[$arg1]->$arg2(@$args), "ok\n") }
-		}
-		elsif($cmd eq "apply") {
-			if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-			else { $self->pack(scalar $arg1->$arg2(@$args), "ok\n") }
-		}
-		elsif($cmd eq "call") {
-			if($arg2) { @ret = &$arg1(@$args); $self->pack(\@ret, "ok\n") }
-			else { $self->pack(scalar &$arg1(@$args), "ok\n") }
-		}
-		elsif($cmd eq "eval") {
-			my $buf;
-			die "Разрыв соединения" if read($pipe, $buf, 4) != 4;
-			my $len = unpack("L", $buf);
-			die "Разрыв соединения" if read($pipe, $buf, $len) != $len;
-			if($arg1) { @ret = eval $buf }
-			else { @ret = scalar eval $buf }
-			die $@ // $! if $@ // $!;
-			$self->pack($arg1? \@ret: $ret[0], "ok\n");
-		}
-		else {
-			die "Неизвестная команда `$cmd`";
-		}
+		$this->process = $process;
+		$this->r = $pipe[5];
+		$this->w = $pipe[4];
+		$this->prog = $prog;
+		$this->bless = "\0bless\0";
+		$this->stub = "\0stub\0";
+		$this->role = "SERVER";
 	}
 
-	return wantarray && ref $args eq "ARRAY"? @$args: $args;
-}
+	# закрывает соединение
+	function close() {
+		fwrite($this->w, "ok\nnull\n");
+		fclose($this->r);
+		fclose($this->w);
+		proc_close($this->process);
+	}
 
-# создаёт заглушку, для удалённого объекта
-sub stub {
-	my ($self, $num) = @_;
-	bless {rpc => $self, num => $num}, "rpc::stub";
-}
+	# создаёт клиента
+	function client() {
 
+		$r = fopen("php://fd/4", "rb");
+		if(!is_resurse($r)) throw new RPCException("NOT DUP IN");
+		$w = fopen("php://fd/5", "wb");
+		if(!is_resurse($w)) throw new RPCException("NOT DUP OUT");
+		
+		$this->r = $r;
+		$this->w = $w;
+		$this->prog = $prog;
+		$this->bless = "\0stub\0";
+		$this->stub = "\0bless\0";
+		$this->role = "CLIENT";
+
+		$this->ret;
+	}
+
+	# превращает в json и сразу отправляет. Объекты складирует в $this->objects
+	function pack($data, $cmd = null) {
+		$pipe = $this->w;
+		
+		if($cmd !== null) fwrite($pipe, $cmd);
+		
+		if(is_array($data))	array_walk_recursive($data, function(&$val, $key) {
+			if($val instanceof RPCstub) $val = array($this->stub => $val->num);
+			else if(is_object($val)) {
+				$this->objects[] = $val;
+				$val = array($this->bless => count($this->objects));
+			}
+		});
+		
+		fwrite($pipe, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK));
+		fwrite($pipe, "\n");
+		flush($pipe);
+		return $this;
+	}
+
+	# распаковывает
+	function unpack($data) {
+
+		$data = json_decode($data);
+		
+		if(is_array($data)) array_walk_recursive($data, function(&$val, $key) {
+			if(is_array($val)) {
+				if(isset($val[$stub])) $val = $this->stub($val[$stub]);
+				else if(isset($val[$bless])) $val = $this->objects[$val[$bless]];
+			}
+		});
+		
+		return $data;
+	}
+
+	# вызывает функцию
+	function call($name, $args, $wantarray = 1) {
+		return $this->pack($args, "call $name ".($wantarray?1:0)."\n")->ret();
+	}
+
+	# вызывает метод
+	function apply($class, $name, $args, $wantarray = 1) {
+		$this->pack($args, "apply $class $name ".($wantarray?1:0)."\n")->ret;
+	}
+
+	# выполняет код
+	function eval($eval, $args, $wantarray = 1) {
+		$pipe = $this->w;
+		$this->pack($args, "eval ".($wantarray?1:0)."\n");
+		fwrite($pipe, pack("L", length $eval));
+		fwrite($pipe, $eval);
+		flush($pipe);
+		$this->ret;
+	}
+
+	# получает и возвращает данные и устанавливает ссылочные параметры
+	function ret {
+		$pipe = $this->r;
+		
+		for(;;) {	# клиент послал запрос
+			$ret = fgets($pipe);
+			$arg = fgets($pipe);
+			$args = $this->unpack($arg);
+			#chop $arg;
+			#chop $ret;
+			
+			if($ret == "ok\n") break;
+			if($ret == "error\n") throw new RPCException($args);
+			#$ret = trim($ret);
+			
+			try {
+			
+				$arg = explode(" ", $ret);
+				$cmd = $arg[0];
+				if($cmd == "stub") {
+					$ret = call_user_func(array($this->objects[$arg[1]], $arg[2]), $args); 
+					$this->pack($ret, "ok\n");
+				}
+				elseif($cmd == "apply") {
+					$ret = call_user_func(array($arg[1], $arg[2]), $args); 
+					$this->pack($ret, "ok\n");
+				}
+				elseif($cmd == "call") {
+					$ret = call_user_func($arg[1], $args); 
+					$this->pack($ret, "ok\n");
+				}
+				elseif($cmd == "eval") {
+					$buf = fread($pipe, 4);
+					if(strlen($buf) != 4) throw new RPCException("Разрыв соединения");
+					$len = unpack("L", $buf);
+					$buf = fread($pipe, $len);
+					if(strlen($buf) != $len) throw new RPCException("Разрыв соединения");
+					$ret = eval($buf);
+					$this->pack($ret, "ok\n");
+				}
+				else {
+					throw new RPCException("Неизвестная команда `$cmd`");
+				}
+			} catch(Exception $e) {
+				$this->pack($e->getMessage(), "error\n");
+			}
+		}
+
+		return $args;
+	}
+
+	# создаёт заглушку, для удалённого объекта
+	function stub($num) {
+		$stub = new RPCStub();
+		$stub->num = $num;
+		$stub->rpc = $this;
+		return $stub;
+	}
+}
 
 # заглушка
-package rpc::stub;
-
-sub AUTOLOAD {
-	my ($self, @param) = @_;
-	local ($&, $`, $');
-	$AUTOLOAD =~ /\w+$/;
-	my $name = $&;
-
-	my $rpc = $self->{rpc};
-	my $pipe = $rpc->{w};
-	my $num = $self->{num};
+class RPCstub {
+	public $num, $rpc;
 	
-	print $pipe "stub $num $name ".(wantarray?1:0)."\n";
-	$rpc->pack(\@param);
-	$rpc->ret(@_);
+	function __call($name, $param) {
+		$this->rpc->pack($param, "stub ".$this->num." $name 1\n")->ret;
+	}
 }
+
+class RPCException extends Exception {}

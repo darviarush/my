@@ -8,8 +8,8 @@ use utils;
 
 
 %prog = (
-"perl" => "perl -Mrpc -e 'rpc->client'",
-"php" => "php -r 'require_once \"rpc.php\"; rpc->client()'",
+"perl" => "perl -Mrpc -e 'rpc->new'",
+"php" => "php -r 'require_once \"rpc.php\"; new rpc();'",
 "python" => "",
 "ruby" => ""
 );
@@ -20,7 +20,21 @@ use utils;
 sub new {
 	my ($cls, $prog) = @_;
 	
-	open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
+	goto &client unless defined $prog;
+	
+	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
+	my ($reader, $ch_writer, $ch_reader, $writer);
+	
+	pipe $reader, $ch_writer;
+	pipe $ch_reader, $writer;
+	
+	unless(fork) {
+		require POSIX;
+		POSIX::dup2(fileno($ch_reader), 4);
+		POSIX::dup2(fileno($ch_writer), 5);
+		exec $prog{$prog} // $prog or die "Ошибка создания канала. $!";
+	}
+	
 	binmode $reader;
 	binmode $writer;
 	
@@ -39,13 +53,15 @@ sub close {
 # создаёт клиента
 sub client {
 	my ($cls) = @_;
-	open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
-	open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
+	open my $r, "<&=4" or die "NOT ASSIGN IN: $!";
+	open my $w, ">&=5" or die "NOT ASSIGN OUT: $!";
+	#open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
+	#open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
 	my $self = bless {r => $r, w => $w, objects => [], bless => "\0stub\0", stub => "\0bless\0", role => "CLIENT"}, $cls;
 	select $r; $| = 1;
 	select $w; $| = 1;
-	open STDIN, "/dev/null";
-	open STDOUT, "< /dev/null";
+	#open STDIN, "/dev/null";
+	#open STDOUT, "< /dev/null";
 	$self->ret;
 }
 
@@ -92,6 +108,7 @@ sub pack {
 	});
 	
 	print $pipe "\n";
+	return $self;
 }
 
 # распаковывает
@@ -124,15 +141,13 @@ sub unpack {
 # вызывает функцию
 sub call {
 	my ($self, $name, @args) = @_;
-	$self->pack(\@args, "call $name ".(wantarray?1:0)."\n");
-	$self->ret(@_);
+	$self->pack(\@args, "call $name ".(wantarray?1:0)."\n")->ret;
 }
 
 # вызывает метод
 sub apply {
 	my ($self, $class, $name, @args) = @_;
-	$self->pack(\@args, "apply $class $name ".(wantarray?1:0)."\n");
-	$self->ret(@_);
+	$self->pack(\@args, "apply $class $name ".(wantarray?1:0)."\n")->ret;
 }
 
 # выполняет код
@@ -142,7 +157,7 @@ sub eval {
 	my $pipe = $self->{w};
 	$self->pack(\@args, "eval ".(wantarray?1:0)."\n");
 	print $pipe pack("L", length $eval), $eval;
-	$self->ret(@_);
+	$self->ret;
 }
 
 # получает и возвращает данные и устанавливает ссылочные параметры
@@ -160,35 +175,41 @@ sub ret {
 		#chop $ret;
 		
 		last if $ret eq "ok\n";
+		die $args if $ret eq "error\n";
 	
 		chop $ret;
 		
-		my ($cmd, $arg1, $arg2, $arg3) = split / /, $ret;
-		if($cmd eq "stub") {
-			if($arg3) { @ret = $self->{objects}->[$arg1]->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-			else { $self->pack(scalar $self->{objects}->[$arg1]->$arg2(@$args), "ok\n") }
-		}
-		elsif($cmd eq "apply") {
-			if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-			else { $self->pack(scalar $arg1->$arg2(@$args), "ok\n") }
-		}
-		elsif($cmd eq "call") {
-			if($arg2) { @ret = &$arg1(@$args); $self->pack(\@ret, "ok\n") }
-			else { $self->pack(scalar &$arg1(@$args), "ok\n") }
-		}
-		elsif($cmd eq "eval") {
-			my $buf;
-			die "Разрыв соединения" if read($pipe, $buf, 4) != 4;
-			my $len = unpack("L", $buf);
-			die "Разрыв соединения" if read($pipe, $buf, $len) != $len;
-			if($arg1) { @ret = eval $buf }
-			else { @ret = scalar eval $buf }
-			die $@ // $! if $@ // $!;
-			$self->pack($arg1? \@ret: $ret[0], "ok\n");
-		}
-		else {
-			die "Неизвестная команда `$cmd`";
-		}
+		eval {
+		
+			my ($cmd, $arg1, $arg2, $arg3) = split / /, $ret;
+			if($cmd eq "stub") {
+				if($arg3) { @ret = $self->{objects}->[$arg1]->$arg2(@$args); $self->pack(\@ret, "ok\n") }
+				else { $self->pack(scalar $self->{objects}->[$arg1]->$arg2(@$args), "ok\n") }
+			}
+			elsif($cmd eq "apply") {
+				if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack(\@ret, "ok\n") }
+				else { $self->pack(scalar $arg1->$arg2(@$args), "ok\n") }
+				die $@ // $! if $@ // $!;
+			}
+			elsif($cmd eq "call") {
+				if($arg2) { @ret = eval $arg1.'(@$args)'; $self->pack(\@ret, "ok\n") }
+				else { $self->pack(scalar eval($arg1.'(@$args)'), "ok\n") }
+			}
+			elsif($cmd eq "eval") {
+				my $buf;
+				die "Разрыв соединения" if read($pipe, $buf, 4) != 4;
+				my $len = unpack("L", $buf);
+				die "Разрыв соединения" if read($pipe, $buf, $len) != $len;
+				if($arg1) { @ret = eval $buf }
+				else { @ret = scalar eval $buf }
+				die $@ // $! if $@ // $!;
+				$self->pack($arg1? \@ret: $ret[0], "ok\n");
+			}
+			else {
+				die "Неизвестная команда `$cmd`";
+			}
+		};
+		$self->pack($@ // $!, "error\n") if $@ // $!;
 	}
 
 	return wantarray && ref $args eq "ARRAY"? @$args: $args;
@@ -209,12 +230,5 @@ sub AUTOLOAD {
 	local ($&, $`, $');
 	$AUTOLOAD =~ /\w+$/;
 	my $name = $&;
-
-	my $rpc = $self->{rpc};
-	my $pipe = $rpc->{w};
-	my $num = $self->{num};
-	
-	print $pipe "stub $num $name ".(wantarray?1:0)."\n";
-	$rpc->pack(\@param);
-	$rpc->ret(@_);
+	$self->{rpc}->pack(\@param, "stub $self->{num} $name ".(wantarray?1:0)."\n")->ret;
 }
