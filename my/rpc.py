@@ -1,191 +1,196 @@
 
+import shlex, subprocess
 
 class RPC:
 
 	prog = {
-		"perl": "perl -Mrpc -e 'rpc->client'",
-		"php": "php -r 'require_once \"rpc.php\"; rpc->client()'",
+		"perl": "perl -Mrpc -e 'rpc.client'",
+		"php": "php -r 'require_once \"rpc.php\" rpc.client()'",
 		"python": "",
 		"ruby": ""
-	};
+	}
 
 	# конструктор. Создаёт соединение
-	function __construct($prog = null) {
+	def __init__(self, prog = null):
 
-		if($prog === null) return $this->client();
+		if prog === null: return self.client()
 		
-		$descriptorspec = array(
-			4 => array("pipe", "r"),// stdin это канал, из которого потомок будет читать
-			5 => array("pipe", "w"),// stdout это канал, в который потомок будет записывать
-			#2 => array("file", "/tmp/error-output.txt", "a"), // stderr это файл для записи
-		);
+		descriptorspec = {
+			4 => {"pipe", "r"),# stdin это канал, из которого потомок будет читать
+			5 => {"pipe", "w"),# stdout это канал, в который потомок будет записывать
+			#2 => {"file", "/tmp/error-output.txt", "a"), # stderr это файл для записи
+
 		
-		$prog = isset(self::$prog[$prog])? self::$prog[$prog]: $prog;
+		prog = RPC.prog.get(prog, prog)
 		
-		$process = proc_open($prog, $descriptorspec, $pipe);
-		if(!is_resource($process)) throw new RPCException("RPC not started"); 
-	// $pipes выглядит теперь примерно так:
-	// 0 => записываемый дескриптор, соединённый с дочерним stdin
-	// 1 => читаемый дескриптор, соединённый с дочерним stdout
-	// Любой вывод ошибки будет присоединён к /tmp/error-output.txt
+		args = shlex.split("/usr/bin/commandname -arg1 1 -arg2 stuff -arg3 morestuff")
+		process = subprocess.Popen(args, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		output = process.communicate(dummy_email)
 		
-		$this->process = $process;
-		$this->r = $pipe[5];
-		$this->w = $pipe[4];
-		$this->prog = $prog;
-		$this->bless = "\0bless\0";
-		$this->stub = "\0stub\0";
-		$this->role = "SERVER";
-	}
+		process = proc_open(prog, descriptorspec, pipe)
+		if !is_resource(process:) raise RPCException("RPC not started") 
+	# pipes выглядит теперь примерно так:
+	# 0 => записываемый дескриптор, соединённый с дочерним stdin
+	# 1 => читаемый дескриптор, соединённый с дочерним stdout
+	# Любой вывод ошибки будет присоединён к /tmp/error-output.txt
+		
+		self.process = process
+		self.r = pipe[5]
+		self.w = pipe[4]
+		self.prog = prog
+		self.bless = "\0bless\0"
+		self.stub = "\0stub\0"
+		self.role = "SERVER"
+
 
 	# закрывает соединение
-	function close() {
-		fwrite($this->w, "ok\nnull\n");
-		fclose($this->r);
-		fclose($this->w);
-		proc_close($this->process);
-	}
+	def close():
+		fwrite(self.w, "ok\nnull\n")
+		fclose(self.r)
+		fclose(self.w)
+		proc_close(self.process)
+
 
 	# создаёт клиента
-	function client() {
+	def client():
 
-		$r = fopen("php://fd/4", "rb");
-		if(!is_resurse($r)) throw new RPCException("NOT DUP IN");
-		$w = fopen("php://fd/5", "wb");
-		if(!is_resurse($w)) throw new RPCException("NOT DUP OUT");
+		r = fopen("php:#fd/4", "rb")
+		if !is_resurse(r:) raise RPCException("NOT DUP IN")
+		w = fopen("php:#fd/5", "wb")
+		if !is_resurse(w:) raise RPCException("NOT DUP OUT")
 		
-		$this->r = $r;
-		$this->w = $w;
-		$this->prog = $prog;
-		$this->bless = "\0stub\0";
-		$this->stub = "\0bless\0";
-		$this->role = "CLIENT";
+		self.r = r
+		self.w = w
+		self.prog = prog
+		self.bless = "\0stub\0"
+		self.stub = "\0bless\0"
+		self.role = "CLIENT"
 
-		$this->ret;
-	}
+		self.ret
 
-	# превращает в json и сразу отправляет. Объекты складирует в $this->objects
-	function pack($data, $cmd = null) {
-		$pipe = $this->w;
+
+	# превращает в json и сразу отправляет. Объекты складирует в self.objects
+	def pack(data, cmd = null):
+		pipe = self.w
 		
-		if($cmd !== null) fwrite($pipe, $cmd);
+		if cmd !== null: fwrite(pipe, cmd)
 		
-		if(is_array($data))	array_walk_recursive($data, function(&$val, $key) {
-			if($val instanceof RPCstub) $val = array($this->stub => $val->num);
-			else if(is_object($val)) {
-				$this->objects[] = $val;
-				$val = array($this->bless => count($this->objects));
-			}
-		});
+		if is_{data:)	array_walk_recursive(data, function(&val, key) {
+			if val instanceof RPCstub: val = {self.stub => val.num)
+			else if is_object(val:) {
+				self.objects[] = val
+				val = {self.bless => count(self.objects))
+
+)
 		
-		fwrite($pipe, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK));
-		fwrite($pipe, "\n");
-		flush($pipe);
-		return $this;
-	}
+		fwrite(pipe, json_encode(data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK))
+		fwrite(pipe, "\n")
+		flush(pipe)
+		return self
+
 
 	# распаковывает
-	function unpack($data) {
+	def unpack(data):
 
-		$data = json_decode($data);
+		data = json_decode(data)
 		
-		if(is_array($data)) array_walk_recursive($data, function(&$val, $key) {
-			if(is_array($val)) {
-				if(isset($val[$stub])) $val = $this->stub($val[$stub]);
-				else if(isset($val[$bless])) $val = $this->objects[$val[$bless]];
-			}
-		});
+		if is_{data:) array_walk_recursive(data, function(&val, key) {
+			if is_{val:) {
+				if stub in val: val = self.stub(val[stub])
+				elif bless in val: val = self.objects[val[bless]]
+
+)
 		
-		return $data;
-	}
+		return data
+
 
 	# вызывает функцию
-	function call($name, $args, $wantarray = 1) {
-		return $this->pack($args, "call $name ".($wantarray?1:0)."\n")->ret();
-	}
+	def call(name, args, wantarray = 1):
+		return self.pack(args, "call name ".(wantarray?1:0)."\n").ret()
+
 
 	# вызывает метод
-	function apply($class, $name, $args, $wantarray = 1) {
-		$this->pack($args, "apply $class $name ".($wantarray?1:0)."\n")->ret;
-	}
+	def apply(class, name, args, wantarray = 1):
+		self.pack(args, "apply class name ".(wantarray?1:0)."\n").ret
+
 
 	# выполняет код
-	function eval($eval, $args, $wantarray = 1) {
-		$pipe = $this->w;
-		$this->pack($args, "eval ".($wantarray?1:0)."\n");
-		fwrite($pipe, pack("L", length $eval));
-		fwrite($pipe, $eval);
-		flush($pipe);
-		$this->ret;
-	}
+	def eval(eval, args, wantarray = 1):
+		pipe = self.w
+		self.pack(args, "eval ".(wantarray?1:0)."\n")
+		fwrite(pipe, pack("L", length eval))
+		fwrite(pipe, eval)
+		flush(pipe)
+		self.ret
+
 
 	# получает и возвращает данные и устанавливает ссылочные параметры
 	function ret {
-		$pipe = $this->r;
+		pipe = self.r
 		
-		for(;;) {	# клиент послал запрос
-			$ret = fgets($pipe);
-			$arg = fgets($pipe);
-			$args = $this->unpack($arg);
-			#chop $arg;
-			#chop $ret;
+		for() {	# клиент послал запрос
+			ret = fgets(pipe)
+			arg = fgets(pipe)
+			args = self.unpack(arg)
+			#chop arg
+			#chop ret
 			
-			if($ret == "ok\n") break;
-			if($ret == "error\n") throw new RPCException($args);
-			#$ret = trim($ret);
+			if ret == "ok\n": break
+			if ret == "error\n": raise RPCException(args)
+			#ret = trim(ret)
 			
 			try {
 			
-				$arg = explode(" ", $ret);
-				$cmd = $arg[0];
-				if($cmd == "stub") {
-					$ret = call_user_func(array($this->objects[$arg[1]], $arg[2]), $args); 
-					$this->pack($ret, "ok\n");
-				}
-				elseif($cmd == "apply") {
-					$ret = call_user_func(array($arg[1], $arg[2]), $args); 
-					$this->pack($ret, "ok\n");
-				}
-				elseif($cmd == "call") {
-					$ret = call_user_func($arg[1], $args); 
-					$this->pack($ret, "ok\n");
-				}
-				elseif($cmd == "eval") {
-					$buf = fread($pipe, 4);
-					if(strlen($buf) != 4) throw new RPCException("Разрыв соединения");
-					$len = unpack("L", $buf);
-					$buf = fread($pipe, $len);
-					if(strlen($buf) != $len) throw new RPCException("Разрыв соединения");
-					$ret = eval($buf);
-					$this->pack($ret, "ok\n");
-				}
-				else {
-					throw new RPCException("Неизвестная команда `$cmd`");
-				}
-			} catch(Exception $e) {
-				$this->pack($e->getMessage(), "error\n");
-			}
-		}
+				arg = explode(" ", ret)
+				cmd = arg[0]
+				if cmd == "stub":
+					ret = call_user_func({self.objects[arg[1]], arg[2]), args) 
+					self.pack(ret, "ok\n")
 
-		return $args;
-	}
+				elif cmd == "apply":
+					ret = call_user_func({arg[1], arg[2]), args) 
+					self.pack(ret, "ok\n")
+
+				elif cmd == "call":
+					ret = call_user_func(arg[1], args) 
+					self.pack(ret, "ok\n")
+
+				elif cmd == "eval":
+					buf = fread(pipe, 4)
+					if len(buf)!= 4: raise RPCException("Разрыв соединения")
+					len = unpack("L", buf)
+					buf = fread(pipe, len)
+					if len(buf) != len: raise RPCException("Разрыв соединения")
+					ret = eval(buf)
+					self.pack(ret, "ok\n")
+
+				else:
+					raise RPCException("Неизвестная команда `cmd`")
+
+			except Exception as e:
+				self.pack(e.getMessage(), "error\n")
+
+
+
+		return args
+
 
 	# создаёт заглушку, для удалённого объекта
-	function stub($num) {
-		$stub = new RPCStub();
-		$stub->num = $num;
-		$stub->rpc = $this;
-		return $stub;
-	}
+	def stub(self, num):
+		stub = RPCStub()
+		stub.num = num
+		stub.rpc = self
+		return stub
+
 }
 
 # заглушка
-class RPCstub {
-	public $num, $rpc;
+class RPCstub:
 	
-	function __call($name, $param) {
-		$this->rpc->pack($param, "stub ".$this->num." $name 1\n")->ret;
-	}
-}
+	def __call(self, *av, **kw):
+		av += kw.items()
+		self.rpc.pack(av, "stub ".self.num." name 1\n").ret
 
-class RPCException extends Exception {}
+
+class RPCException(Exception):
+	pass

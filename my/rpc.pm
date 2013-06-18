@@ -25,19 +25,22 @@ sub new {
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
 	
-	pipe $reader, $ch_writer;
 	pipe $ch_reader, $writer;
+	pipe $reader, $ch_writer;
+	
+	binmode $reader; binmode $writer; binmode $ch_reader; binmode $ch_writer;
+	select $reader; $|=1;
+	select $writer; $|=1;
 	
 	unless(fork) {
 		require POSIX;
-		POSIX::dup2(fileno($ch_reader), 4);
-		POSIX::dup2(fileno($ch_writer), 5);
+		my $ch4 = fileno $ch_reader;
+		my $ch5 = fileno $ch_writer;
+		POSIX::dup2($ch4, 4) if $ch4 != 4;
+		POSIX::dup2($ch5, 5) if $ch5 != 5;
 		exec $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	}
-	
-	binmode $reader;
-	binmode $writer;
-	
+		
 	bless {r => $reader, w => $writer, prog => $prog, objects => [], bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
 }
 

@@ -1,4 +1,4 @@
-use Test::More tests => 11;
+use Test::More tests => 12;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;
@@ -47,7 +47,10 @@ is($header, "Content-Type: text/html; charset=ISO-8859-1\r\n\r\n");
 $header = $cgi->header(-type=>'image/gif',-expires=>'+3d');
 like($header, qr/Content-Type: image\/gif/);
 
+
+@ret = $rpc->eval("\$args->[0]->call('reverse', 1,2,\@\$args)", $rpc, 4);
+is_deeply(\@ret, [4,$rpc,2,1]);
+
+
 $rpc->close;
-
-
 

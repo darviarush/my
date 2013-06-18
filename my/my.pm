@@ -202,13 +202,21 @@ h "t", "тесты [-3..1] [файл теста1 ...] - 1-й параметр - 
 		$from = 1;
 		$verbosity = -3;
 	}
-	my @test = map {"$_.t"} @ARGV[$from..$#ARGV];
-	@test = <*.t> unless @test;
+
+	my @test = map { my $u = $_; my @t = grep { -e $_ } ($_, map { "$u.$_" } qw(t t.php t.py t.rb)); @t[0] } @ARGV[$from..$#ARGV];
+	@test = (<*.t>, <*.t.*>) unless @test;
 	my $harness = TAP::Harness->new({
 		verbosity => $verbosity,		# -3, 1
 		color => 1,
 		timer => 1,
-		lib => [".", "../../my", "../lib", ".."]
+		lib => [".", "../../my", "../lib", ".."],
+		exec => sub {
+			my ( $harness, $test_file ) = @_;
+			warn('php'), return [ qw( /usr/bin/env php ), $test_file ] if $test_file =~ /[.]php$/;
+			return [ qw( /usr/bin/env python ), $test_file ] if $test_file =~ /[.]py$/;
+			return [ qw( /usr/bin/env ruby -w ), $test_file ] if $test_file =~ /[.]rb$/;
+			return undef;
+		}
 	});
 	$harness->runtests(@test);
 	chdir "..";

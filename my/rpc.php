@@ -2,20 +2,20 @@
 
 class RPC {
 
-	static $prog = array(
+	static $PROG = array(
 		"perl" => "perl -Mrpc -e 'rpc->client'",
 		"php" => "php -r 'require_once \"rpc.php\"; rpc->client()'",
 		"python" => "",
 		"ruby" => ""
 	);
 
-	public $r, $w, $objects, $prog, $bless, $stub, $role, $process;
+	public $r, $w, $objects, $prog, $bless, $stub, $role, $process, $wantarray = 1;
 
 
 
 	# конструктор. Создаёт соединение
 	function __construct($prog = null) {
-
+	
 		if($prog === null) return $this->client();
 		
 		$descriptorspec = array(
@@ -24,7 +24,7 @@ class RPC {
 			#2 => array("file", "/tmp/error-output.txt", "a"), // stderr это файл для записи
 		);
 		
-		$prog = isset(self::$prog[$prog])? self::$prog[$prog]: $prog;
+		$prog = isset(self::$PROG[$prog])? self::$PROG[$prog]: $prog;
 		
 		$process = proc_open($prog, $descriptorspec, $pipe);
 		if(!is_resource($process)) throw new RPCException("RPC not started"); 
@@ -91,7 +91,7 @@ class RPC {
 	# распаковывает
 	function unpack($data) {
 
-		$data = json_decode($data);
+		$data = json_decode($data, true);
 		
 		if(is_array($data)) array_walk_recursive($data, function(&$val, $key) {
 			if(is_array($val)) {
@@ -104,27 +104,30 @@ class RPC {
 	}
 
 	# вызывает функцию
-	function call($name, $args, $wantarray = 1) {
-		return $this->pack($args, "call $name ".($wantarray?1:0)."\n")->ret();
+	function call($name) {
+		$args = func_get_args(); array_shift($args);
+		return $this->pack($args, "call $name ".($this->wantarray?1:0)."\n")->ret();
 	}
 
 	# вызывает метод
-	function apply($class, $name, $args, $wantarray = 1) {
-		$this->pack($args, "apply $class $name ".($wantarray?1:0)."\n")->ret;
+	function apply($class, $name) {
+		$args = func_get_args(); array_shift($args); array_shift($args);
+		$this->pack($args, "apply $class $name ".($this->wantarray?1:0)."\n")->ret;
 	}
 
 	# выполняет код
-	function eval($eval, $args, $wantarray = 1) {
+	function evaluate($eval) {
 		$pipe = $this->w;
-		$this->pack($args, "eval ".($wantarray?1:0)."\n");
-		fwrite($pipe, pack("L", length $eval));
+		$args = func_get_args(); array_shift($args);
+		$this->pack($args, "eval ".($this->wantarray?1:0)."\n");
+		fwrite($pipe, pack("L", strlen($eval)));
 		fwrite($pipe, $eval);
 		flush($pipe);
 		$this->ret;
 	}
 
 	# получает и возвращает данные и устанавливает ссылочные параметры
-	function ret {
+	function ret() {
 		$pipe = $this->r;
 		
 		for(;;) {	# клиент послал запрос
@@ -188,7 +191,7 @@ class RPCstub {
 	public $num, $rpc;
 	
 	function __call($name, $param) {
-		$this->rpc->pack($param, "stub ".$this->num." $name 1\n")->ret;
+		$this->rpc->pack($param, "stub ".$this->num." $name ".($this->wantarray? 1: 0)."\n")->ret;
 	}
 }
 
