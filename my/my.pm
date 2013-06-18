@@ -260,11 +260,10 @@ h "dist", "архивирование и сохранение", sub {
 	chdir "..";
 	my $res = $ARGV[1] // 'save';
 	
-
-	`git status`;
-	`git add .`;
-	`git commit -am "$res"`;
-	`git push`;
+	print `git status`;
+	print `git add .`;
+	print `git commit -am "$res"`;
+	print `git push`;
 	#$, = " ";
 	#@dir = grep { $_ ne ".my" } <*>;
 	#$date = `date '+%F_%T'`;
