@@ -258,13 +258,14 @@ h "tt", "самоперезапускающиеся тесты", sub {
 
 h "dist", "архивирование и сохранение", sub {
 	require utils;
+	$\ = "";
 	chdir "..";
 	$res = $ARGV[1] // 'save';
 	
 	my $path = "/cygdrive/c/220part/rp220/protected";
 	if(-d $path) {
 		utils::walk("$path/components", "$path/views/site/report.php", "$path/views/site/report_qbe.php", "$path/controllers/SiteController.php", sub {
-			$_[0] =~ /[\/]+$/;
+			$_[0] =~ /[^\/]+$/;
 			utils::cp($_[0], "part/$&");
 		});
 	}
