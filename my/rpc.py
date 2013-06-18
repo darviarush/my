@@ -128,12 +128,10 @@ class RPC:
 	function ret {
 		pipe = self.r
 		
-		for() {	# клиент послал запрос
-			ret = fgets(pipe)
-			arg = fgets(pipe)
+		while 1:	# клиент послал запрос
+			ret = pipe.readline()
+			arg = pipe.readline()
 			args = self.unpack(arg)
-			#chop arg
-			#chop ret
 			
 			if ret == "ok\n": break
 			if ret == "error\n": raise RPCException(args)
@@ -187,7 +185,7 @@ class RPC:
 # заглушка
 class RPCstub:
 	
-	def __call(self, *av, **kw):
+	def __call__(self, *av, **kw):
 		av += kw.items()
 		self.rpc.pack(av, "stub ".self.num." name 1\n").ret
 

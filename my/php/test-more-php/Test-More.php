@@ -41,4 +41,3 @@ function todo_skip()    { global $__Test; $args = func_get_args(); return call_u
 function todo_start()   { global $__Test; $args = func_get_args(); return call_user_func_array(array($__Test,'todo_start'),$args); }
 function todo_end()     { global $__Test; $args = func_get_args(); return call_user_func_array(array($__Test,'todo_end'),$args); }
 
-?>

@@ -195,7 +195,7 @@ class TestSimple {
         $diagnostics = func_get_args();
         $msg = '';
         foreach ($diagnostics as $line) $msg .= "# ".str_replace("\n","\n# ",$line)."\n";
-        echo $msg;
+        fwrite(STDERR, $msg);
         if ($this->Filter) ob_flush();
         return $msg;
     }
@@ -232,4 +232,3 @@ class TestSimple {
 
 }
 
-?>

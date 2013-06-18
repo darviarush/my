@@ -582,12 +582,14 @@ sub from_radix {
 }
 
 # заходит во все поддиректории и запускает функцию на конце для файла, а если их две - для файла и папки
+#	Если $fn или $fn_dir возвращает -1, то функция завершает работу
+#	Если $fn_dir возвращает -2, то walk в данную папку не входит
 sub walk {
 	my ($fn, $fn_dir) = pop @_;
 	$fn_dir = pop @_ if ref $_[$#_] eq "CODE";
 	my @dir = ();
 	for my $path (@_) {
-		if(-d $path) { push @dir, $path; return if $fn_dir and $fn_dir->($path) == -1; }
+		if(-d $path) { my $ret = ($fn_dir and $fn_dir->($path)); return if $ret == -1; push @dir, $path if $ret != -2; }
 		else { return if $fn->($path) == -1; }
 	}
 	local (*d);
@@ -597,7 +599,7 @@ sub walk {
 		while(my $file = readdir d) {
 			next if $file eq "." or $file eq "..";
 			$path = "$dir/$file";
-			if(-d $path) { push @dir, $path; return if $fn_dir and $fn_dir->($path) == -1; }
+			if(-d $path) { my $ret = ($fn_dir and $fn_dir->($path)); return if $ret == -1; push @dir, $path if $ret != -2; }
 			else { return if $fn->($path) == -1; }
 		}
 		closedir d;
@@ -609,16 +611,17 @@ sub blessed {
 	ref($_[0]) !~ /^(?:ARRAY|GLOB|HASH|CODE|SCALAR|)\z/
 }
 
+# isa для объекта
 sub isa {
 	my ($a, $b) = @_;
 	blessed($a) && $a->isa($b)
 }
 
+# can для объекта
 sub can {
 	my ($a, $b) = @_;
 	blessed($a) && $a->can($b)
 }
-
 
 # очищает память пакета
 sub clear_mem {

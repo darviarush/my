@@ -212,7 +212,7 @@ h "t", "тесты [-3..1] [файл теста1 ...] - 1-й параметр - 
 		lib => [".", "../../my", "../lib", ".."],
 		exec => sub {
 			my ( $harness, $test_file ) = @_;
-			warn('php'), return [ qw( /usr/bin/env php ), $test_file ] if $test_file =~ /[.]php$/;
+			return [ qw( /usr/bin/env php ), $test_file ] if $test_file =~ /[.]php$/;
 			return [ qw( /usr/bin/env python ), $test_file ] if $test_file =~ /[.]py$/;
 			return [ qw( /usr/bin/env ruby -w ), $test_file ] if $test_file =~ /[.]rb$/;
 			return undef;
@@ -257,18 +257,26 @@ h "tt", "самоперезапускающиеся тесты", sub {
 };
 
 h "dist", "архивирование и сохранение", sub {
-	$, = " ";
-	@dir = grep { $_ ne ".my" } <*>;
-	$date = `date '+%F_%T'`;
-	chomp $date;
-	$name = "my.$date.tar.bz2";
+	chdir "..";
+	my $res = $ARGV[1] // 'save';
+	
+
+	`git status`;
+	`git add .`;
+	`git commit -am "$res"`;
+	`git push`;
+	#$, = " ";
+	#@dir = grep { $_ ne ".my" } <*>;
+	#$date = `date '+%F_%T'`;
+	#chomp $date;
+	#$name = "my.$date.tar.bz2";
 	#print "tar /var/bk/$name cfj @dir\n";
-	if(-e "/var/bk") {
-		`tar cfj /var/bk/$name @dir > /dev/null`;
-		`echo my | /usr/local/bin/mutt -a /var/bk/$name -s $name darviarush\@ya.ru > /dev/null`;
-	} else {
-		`tar cfj my.tbz2 @dir > /dev/null`;
-	}
+	#if(-e "/var/bk") {
+#		`tar cfj /var/bk/$name @dir > /dev/null`;
+#		`echo my | /usr/local/bin/mutt -a /var/bk/$name -s $name darviarush\@ya.ru > /dev/null`;
+#	} else {
+#		`tar cfj my.tbz2 @dir > /dev/null`;
+#	}
 	#require "lib/mailer.pm";
 	#use ini;
 	#$mailer = maler->new(\%ini{"smtp"});
