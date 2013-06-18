@@ -474,7 +474,7 @@ sub replace {
 # копирует файл
 sub cp {
 	my ($from, $to) = @_;
-	Utils::write($to, Utils::read($from));
+	utils::write($to, utils::read($from));
 }
 
 # stderr и stdout записывает так же и в файл
