@@ -3,8 +3,8 @@
 class RPC {
 
 	static $PROG = array(
-		"perl" => "perl -Mrpc -e 'rpc->client'",
-		"php" => "php -r 'require_once \"rpc.php\"; rpc->client()'",
+		"perl" => "perl -I%s -Mrpc -e 'rpc->client'",
+		"php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
 		"python" => "",
 		"ruby" => ""
 	);
@@ -24,7 +24,10 @@ class RPC {
 			#2 => array("file", "/tmp/error-output.txt", "a"), // stderr это файл для записи
 		);
 		
-		$prog = isset(self::$PROG[$prog])? self::$PROG[$prog]: $prog;
+		if(isset(self::$PROG[$prog])) {
+			$prog = self::$PROG[$prog];
+			$prog = sprintf($prog, dirname(__FILE__)."/../my");
+		}
 		
 		$process = proc_open($prog, $descriptorspec, $pipe);
 		if(!is_resource($process)) throw new RPCException("RPC not started"); 
@@ -54,9 +57,9 @@ class RPC {
 	function client() {
 
 		$r = fopen("php://fd/4", "rb");
-		if(!is_resurse($r)) throw new RPCException("NOT DUP IN");
+		if(!$r) throw new RPCException("NOT DUP IN");
 		$w = fopen("php://fd/5", "wb");
-		if(!is_resurse($w)) throw new RPCException("NOT DUP OUT");
+		if(!$w) throw new RPCException("NOT DUP OUT");
 		
 		$this->r = $r;
 		$this->w = $w;

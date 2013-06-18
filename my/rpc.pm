@@ -41,7 +41,7 @@ sub new {
 		exec $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	}
 		
-	bless {r => $reader, w => $writer, prog => $prog, objects => [], bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
+	bless {r => $reader, w => $writer, prog => $prog, objects => {}, bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
 }
 
 # закрывает соединение
@@ -60,7 +60,7 @@ sub client {
 	open my $w, ">&=5" or die "NOT ASSIGN OUT: $!";
 	#open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
 	#open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
-	my $self = bless {r => $r, w => $w, objects => [], bless => "\0stub\0", stub => "\0bless\0", role => "CLIENT"}, $cls;
+	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "CLIENT"}, $cls;
 	select $r; $| = 1;
 	select $w; $| = 1;
 	#open STDIN, "/dev/null";
@@ -75,8 +75,9 @@ sub json_quote {
 		$val = "{".utils::json_quote($self->{stub}).":$val->{num}}";
 	} elsif(ref $val) {
 		my $objects = $self->{objects};
-		push @$objects, $val;
-		$val = "{".utils::json_quote($self->{bless}).":$#$objects}";
+		my $num = %$objects + 0;
+		$objects->{$num} = $val;
+		$val = "{".utils::json_quote($self->{bless}).":$num}";
 	}
 	else { $val = utils::json_quote($val) }
 	return $val;
@@ -134,7 +135,7 @@ sub unpack {
 			$$ref = $self->stub($num);
 		}
 		elsif(defined($num = $val->{$bless})) {
-			$$ref = $objects->[$num];
+			$$ref = $objects->{$num};
 		}		
 	});
 	
@@ -186,8 +187,12 @@ sub ret {
 		
 			my ($cmd, $arg1, $arg2, $arg3) = split / /, $ret;
 			if($cmd eq "stub") {
-				if($arg3) { @ret = $self->{objects}->[$arg1]->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-				else { $self->pack(scalar $self->{objects}->[$arg1]->$arg2(@$args), "ok\n") }
+				if($arg3) { @ret = $self->{objects}->{$arg1}->$arg2(@$args); $self->pack(\@ret, "ok\n") }
+				else { $self->pack(scalar $self->{objects}->{$arg1}->$arg2(@$args), "ok\n") }
+			}
+			elsif($cmd eq "destroy") {
+				delete $self->{objects}->{$arg1};
+				$self->pack(undef, "ok\n");
 			}
 			elsif($cmd eq "apply") {
 				if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack(\@ret, "ok\n") }
@@ -234,4 +239,9 @@ sub AUTOLOAD {
 	$AUTOLOAD =~ /\w+$/;
 	my $name = $&;
 	$self->{rpc}->pack(\@param, "stub $self->{num} $name ".(wantarray?1:0)."\n")->ret;
+}
+
+sub DESTROY {
+	my ($self, @param) = @_;
+	$self->{rpc}->pack(\@param, "destroy $self->{num} ".(wantarray?1:0)."\n")->ret;
 }

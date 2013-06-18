@@ -6,9 +6,21 @@ require_once dirname(__FILE__)."/../../my/rpc.php";
 plan(12);
 
 
-#require_ok(dirname(__FILE__)."/../../my/rpc.php");
+$rpc = new rpc('php');
 
-$rpc = new rpc("perl");
+$a = $rpc->unpack('{"f":["x",1]}');
+is_deeply($a, array("f"=>["x",1]));
+
+$A = $rpc->evaluate('array_reverse($args)', 1,array(2,4),array("f"=>"p"),3);
+is_deeply($A, array(3,array("f"=>"p"),array(2,4),1));
+
+$A = $rpc->call('array_reverse', array(1,array(2,4),array("f"=>"p"),3));
+is_deeply($A, 3,array("f"=>"p"),array(2,4),1);
+
+$rpc->close();
+
+/*
+$rpc = new rpc("/usr/bin/env perl -I../../my -Mrpc -e 'rpc->client'");
 
 
 $a = $rpc->unpack('{"f":["x",1]}');
@@ -52,3 +64,4 @@ is_deeply($ret, array(4,$rpc,2,1));
 
 
 $rpc->close();
+*/

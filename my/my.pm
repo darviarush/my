@@ -200,7 +200,7 @@ h "t", "тесты [-3..1] [файл теста1 ...] - 1-й параметр - 
 		$verbosity = $ARGV[1];
 	} else {
 		$from = 1;
-		$verbosity = -3;
+		$verbosity = 0; # -3;
 	}
 
 	my @test = map { my $u = $_; my @t = grep { -e $_ } ($_, map { "$u.$_" } qw(t t.php t.py t.rb)); @t[0] } @ARGV[$from..$#ARGV];

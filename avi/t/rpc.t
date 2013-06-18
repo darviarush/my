@@ -1,4 +1,4 @@
-use Test::More tests => 12;
+use Test::More tests => 14;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;
@@ -44,13 +44,25 @@ is($h1, '<h1>hello world</h1>');
 $header = $cgi->header;
 is($header, "Content-Type: text/html; charset=ISO-8859-1\r\n\r\n");
 
-$header = $cgi->header(-type=>'image/gif',-expires=>'+3d');
+$header = $cgi->header(-type=>'image/gif', -expires=>'+3d');
 like($header, qr/Content-Type: image\/gif/);
 
 
-@ret = $rpc->eval("\$args->[0]->call('reverse', 1,2,\@\$args)", $rpc, 4);
-is_deeply(\@ret, [4,$rpc,2,1]);
+delete ${"main::"}{"cgi"};
 
+@ret = $rpc->eval("\$args->[0]->call('reverse', 1,2,\@\$args)", $rpc, 4);
+
+is_deeply(\@ret, [4,$rpc,2,1]);
 
 $rpc->close;
 
+
+$rpc = rpc->new('php');
+
+@ret = $rpc->eval("array_reverse($args)", 1,[2,4],{"f"=>"p"},3);
+is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
+
+@ret = $rpc->call("array_reverse", [1,[2,4],{"f"=>"p"},3]);
+is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
+
+$rpc->close;
