@@ -51,18 +51,22 @@ like($header, qr/Content-Type: image\/gif/);
 delete ${"main::"}{"cgi"};
 
 @ret = $rpc->eval("\$args->[0]->call('reverse', 1,2,\@\$args)", $rpc, 4);
-
 is_deeply(\@ret, [4,$rpc,2,1]);
+
+$bless = $rpc->eval("\$args->[0]->{bless}", $rpc);
+is($bless, $rpc->{bless});
+
 
 $rpc->close;
 
 
 $rpc = rpc->new('php');
 
-@ret = $rpc->eval("array_reverse($args)", 1,[2,4],{"f"=>"p"},3);
+@ret = $rpc->eval("return array_reverse(\$args);", 1,[2,4],{"f"=>"p"},3);
 is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
 
 @ret = $rpc->call("array_reverse", [1,[2,4],{"f"=>"p"},3]);
 is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
 
 $rpc->close;
+

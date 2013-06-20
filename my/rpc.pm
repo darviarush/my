@@ -8,8 +8,8 @@ use utils;
 
 
 %prog = (
-"perl" => "perl -Mrpc -e 'rpc->new'",
-"php" => "php -r 'require_once \"rpc.php\"; new rpc();'",
+"perl" => "perl -e 'require \"%s/rpc.pm\"; rpc->new'",
+"php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
 "python" => "",
 "ruby" => ""
 );
@@ -34,11 +34,13 @@ sub new {
 	
 	unless(fork) {
 		require POSIX;
+		my $lp = $prog{$prog};
+		$prog = sprintf $prog{$prog}, $INC{'rpc.pm'} =~ /\/rpc.pm$/ && $` if defined $lp;
 		my $ch4 = fileno $ch_reader;
 		my $ch5 = fileno $ch_writer;
 		POSIX::dup2($ch4, 4) if $ch4 != 4;
 		POSIX::dup2($ch5, 5) if $ch5 != 5;
-		exec $prog{$prog} // $prog or die "Ошибка создания канала. $!";
+		exec $prog or die "Ошибка создания канала. $!";
 	}
 		
 	bless {r => $reader, w => $writer, prog => $prog, objects => {}, bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
@@ -48,9 +50,9 @@ sub new {
 sub close {
 	my ($self) = @_;
 	local ($,, $\) = ();
-	my $w = $self->{w};
-	print $w "ok\nnull\n";
-	close $w, $self->{r};
+	$self->pack([], "ok\n");
+	close $self->{w} or die "Не закрыт поток записи";
+	close $self->{r} or die "Не закрыт поток чтения";
 }
 
 # создаёт клиента
@@ -66,13 +68,17 @@ sub client {
 	#open STDIN, "/dev/null";
 	#open STDOUT, "< /dev/null";
 	$self->ret;
+	#bless($_, 'HASH') for values %{$self->{objects}};
 }
 
 # квотирует для передачи
 sub json_quote {
 	my ($self, $val) = @_;
 	if(ref $val eq "rpc::stub") {
-		$val = "{".utils::json_quote($self->{stub}).":$val->{num}}";
+		my $stub = tied %$val;
+		$val = "{".utils::json_quote($self->{stub}).":$stub->{num}}";
+	} elsif(ref $val eq "utils::boolean") {
+		$val = "$val";
 	} elsif(ref $val) {
 		my $objects = $self->{objects};
 		my $num = %$objects + 0;
@@ -173,10 +179,12 @@ sub ret {
 	
 	for(;;) {	# клиент послал запрос
 		my $ret = <$pipe>;
+		#warn("$self->{role} closed: ".Dumper([caller(1)])), 
+		return unless defined $ret;	# закрыт канал
 		my $arg = scalar <$pipe>;
 		$args = $self->unpack($arg);
-		#chop $arg;
-		#chop $ret;
+		
+		#warn "$self->{role} $ret $arg\n";
 		
 		last if $ret eq "ok\n";
 		die $args if $ret eq "error\n";
@@ -189,6 +197,27 @@ sub ret {
 			if($cmd eq "stub") {
 				if($arg3) { @ret = $self->{objects}->{$arg1}->$arg2(@$args); $self->pack(\@ret, "ok\n") }
 				else { $self->pack(scalar $self->{objects}->{$arg1}->$arg2(@$args), "ok\n") }
+			}
+			elsif($cmd eq "get") {
+				$self->pack($self->{objects}->{$arg1}->{$args->{key}}, "ok\n")
+			}
+			elsif($cmd eq "set") {
+				$self->{objects}->{$arg1}->{$args->{key}} = $args->{val};
+				$self->pack(1, "ok\n")
+			}
+			elsif($cmd eq "del") {
+				delete $self->{objects}->{$arg1}->{$args->{key}};
+				$self->pack(1, "ok\n");
+			}
+			elsif($cmd eq "clear") {
+				%{$self->{objects}->{$arg1}} = ();
+				$self->pack(1, "ok\n");
+			}
+			elsif($cmd eq "in") {
+				$self->pack(exists $self->{objects}->{$arg1}->{$args->{key}}, "ok\n")
+			}
+			elsif($cmd eq "len") {
+				$self->pack(%{$self->{objects}->{$arg1}}+0, "ok\n")
 			}
 			elsif($cmd eq "destroy") {
 				delete $self->{objects}->{$arg1};
@@ -214,7 +243,7 @@ sub ret {
 				$self->pack($arg1? \@ret: $ret[0], "ok\n");
 			}
 			else {
-				die "Неизвестная команда `$cmd`";
+				die "$self->{role} Неизвестная команда `$cmd` `$ret` `$arg`";
 			}
 		};
 		$self->pack($@ // $!, "error\n") if $@ // $!;
@@ -226,7 +255,9 @@ sub ret {
 # создаёт заглушку, для удалённого объекта
 sub stub {
 	my ($self, $num) = @_;
-	bless {rpc => $self, num => $num}, "rpc::stub";
+	my %x;
+	tie %x, "rpc::prestub", $self, $num; 
+	bless \%x, "rpc::stub";
 }
 
 
@@ -238,10 +269,35 @@ sub AUTOLOAD {
 	local ($&, $`, $');
 	$AUTOLOAD =~ /\w+$/;
 	my $name = $&;
+	$self = tied %$self;
 	$self->{rpc}->pack(\@param, "stub $self->{num} $name ".(wantarray?1:0)."\n")->ret;
 }
 
 sub DESTROY {
 	my ($self, @param) = @_;
+	$self = tied %$self;
 	$self->{rpc}->pack(\@param, "destroy $self->{num} ".(wantarray?1:0)."\n")->ret;
 }
+
+package rpc::prestub;
+
+use Data::Dumper;
+
+sub send {
+	my ($self, $cmd, $args) = @_;
+	warn "$cmd=".Dumper($args);
+	$self->{rpc}->pack($args, "$cmd $self->{num}\n")->ret
+}
+
+sub TIEHASH { my ($cls, $rpc, $num) = @_; bless {rpc => $rpc, num => $num}, $cls }
+sub FETCH { my ($self, $key) = @_;  $self->send("get", {key=>$key}) }
+sub STORE { my ($self, $key, $val) = @_; $self->send("set", {key=>$key, val=>$val}) }
+sub DELETE { my ($self, $key) = @_; $self->send("del", {key=>$key}) }
+sub CLEAR { my ($self) = @_; $self->send("clear", {}) }
+sub EXISTS { my ($self, $key) = @_; $self->send("in", {key=>$key}) }
+sub SCALAR { my ($self) = @_; $self->send("len", {}) }
+
+#    FIRSTKEY this
+#    NEXTKEY this, lastkey
+#    DESTROY this
+#    UNTIE this

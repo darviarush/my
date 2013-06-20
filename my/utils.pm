@@ -1,40 +1,29 @@
+package utils::boolean;
+
+# Эмулирует булевый класс для json
+
+$true = utils::boolean->new(1);
+$false = utils::boolean->new(0);
+
+use overload 'bool' => sub { ${$_[0]} };
+
+use overload '""'   => sub { ${$_[0]} ? 'true' : 'false' };
+use overload 'eq'   => sub { my($s, $t) = @_; "$s" eq (ref $t eq ref $s ? "$t": $t)? $true: $false };
+use overload 'ne'   => sub { my($s, $t)=@_; !($s eq $t) };
+
+use overload '0+'   => sub { ${$_[0]} };
+use overload '=='   => sub { my($s,$t)=@_; $$s == (ref $t eq ref $s ? $$t: $t)? $true: $false };
+use overload '!='   => sub { my($s,$t)=@_; !($s == $t) };
+use overload '!'	=> sub { ${$_[0]} ? $false: $true };
+
+sub new {
+	my ( $class, $value ) = @_;
+	bless \(my $state = $value), $class;
+}
+
 package utils;
 
 use Data::Dumper;
-
-
-# заходит во все хеши и массивы и запускает функцию на конце для скаляра. Второй параметр - ссылка на скаляр - ф-я может модифицировать
-sub walk_data {
-	my ($scalar, $fn, $fn_begin, $fn_end) = @_;
-	my ($k, $v);
-	my @scalar = (\$_[0]);
-
-	while(@scalar) {
-		my $ref = pop @scalar;
-		
-		$fn_end->(@$ref), next if ref $ref eq "ARRAY";
-		
-		my $key = undef;
-		($key, $ref) = %$ref if ref $ref eq "HASH";
-		
-		my $scalar = $$ref;
-		my $class = ref $scalar;
-
-		if($class eq "ARRAY") {
-			$fn_begin->($ref, $key, 0) if $fn_begin;
-			push @scalar, [$ref, $key, 0] if $fn_end;
-			push @scalar, reverse \(@$scalar);
-		}
-		elsif($class eq "HASH") {
-			$fn_begin->($ref, $key, 1) if $fn_begin;
-			push @scalar, [$ref, $key, 1] if $fn_end;
-			push @scalar, {$_=>\($scalar->{$_})} for keys %$scalar;
-		}
-		else {
-			$fn->($ref, $key);
-		}
-	}
-}
 
 # дампер JSON
 sub to_json {
@@ -58,11 +47,8 @@ sub to_json {
 # оборачивает в кавычки json
 sub json_quote {
 	my ($x) = @_;
-	if(ref $x eq "SCALAR") {
-		return "true" if $$x eq "1";
-		return "false" if $$x eq "0";
-	}
-	return "null" if not defined $x;
+	return "$x" if $x eq "utils::boolean";
+	return "null" unless defined $x;
 	return $x if $x eq 0+$x;
 
 	$x = "$x";
@@ -130,8 +116,8 @@ sub from_json {
 		do { return unless &$pop_hash;  push @x, pop @s; }, next if /\G}/g; pos = $pos;
 		do { return unless &$pop_array; push @x, pop @s; }, next if /\G]/g; pos = $pos;
 
-		push(@x, \1), next if /\Gtrue\b/g; pos = $pos;
-		push(@x, \0), next if /\Gfalse\b/g; pos = $pos;
+		push(@x, $utils::boolean::true), next if /\Gtrue\b/g; pos = $pos;
+		push(@x, $utils::boolean::false), next if /\Gfalse\b/g; pos = $pos;
 		push(@x, undef), next if /\Gnull\b/g; pos = $pos;
 		push(@x, 0+$&), next if /\G-?\d+(\.\d+)?([Ee][+-]?\d+)?/g; pos = $pos;
 		do {		# преобразуем строку
@@ -154,6 +140,39 @@ sub from_json {
 	$@ = "Остались операторы JSON", return if @s;
 	return $x[0];
 
+}
+
+# заходит во все хеши и массивы и запускает функцию на конце для скаляра. Второй параметр - ссылка на скаляр - ф-я может модифицировать
+sub walk_data {
+	my ($scalar, $fn, $fn_begin, $fn_end) = @_;
+	my ($k, $v);
+	my @scalar = (\$_[0]);
+
+	while(@scalar) {
+		my $ref = pop @scalar;
+		
+		$fn_end->(@$ref), next if ref $ref eq "ARRAY";
+		
+		my $key = undef;
+		($key, $ref) = %$ref if ref $ref eq "HASH";
+		
+		my $scalar = $$ref;
+		my $class = ref $scalar;
+
+		if($class eq "ARRAY") {
+			$fn_begin->($ref, $key, 0) if $fn_begin;
+			push @scalar, [$ref, $key, 0] if $fn_end;
+			push @scalar, reverse \(@$scalar);
+		}
+		elsif($class eq "HASH") {
+			$fn_begin->($ref, $key, 1) if $fn_begin;
+			push @scalar, [$ref, $key, 1] if $fn_end;
+			push @scalar, {$_=>\($scalar->{$_})} for keys %$scalar;
+		}
+		else {
+			$fn->($ref, $key);
+		}
+	}
 }
 
 # создаёт множество

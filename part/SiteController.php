@@ -192,6 +192,7 @@ class SiteController extends Controller
 		$id = $_REQUEST['id'];
 		$name = $_REQUEST['name'];
 		$for_users = $_REQUEST['for_users']+0;
+		$type = $_REQUEST['type'];
 		$content = $_REQUEST['content'];
 
 		$qbe = new Qbe($content);
@@ -206,6 +207,7 @@ class SiteController extends Controller
 		$model->editor_id = Yii::app()->user->id;
 		$model->name = $name;
 		$model->for_users = $for_users;
+		$model->type = $type;
 		$model->content = $content;
 		$model->sql = $qbe->sql;
 		$model->explainas = json_encode($explain);

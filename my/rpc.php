@@ -3,7 +3,7 @@
 class RPC {
 
 	static $PROG = array(
-		"perl" => "perl -I%s -Mrpc -e 'rpc->client'",
+		"perl" => "perl -e 'require \"%s/rpc.pm\"; rpc->new'",
 		"php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
 		"python" => "",
 		"ruby" => ""
@@ -55,7 +55,7 @@ class RPC {
 
 	# создаёт клиента
 	function client() {
-
+	
 		$r = fopen("php://fd/4", "rb");
 		if(!$r) throw new RPCException("NOT DUP IN");
 		$w = fopen("php://fd/5", "wb");
@@ -68,7 +68,7 @@ class RPC {
 		$this->stub = "\0bless\0";
 		$this->role = "CLIENT";
 
-		$this->ret;
+		$this->ret();
 	}
 
 	# превращает в json и сразу отправляет. Объекты складирует в $this->objects
@@ -134,11 +134,13 @@ class RPC {
 		$pipe = $this->r;
 		
 		for(;;) {	# клиент послал запрос
+			if(feof($pipe)) return;	# закрыт
 			$ret = fgets($pipe);
 			$arg = fgets($pipe);
 			$args = $this->unpack($arg);
-			#chop $arg;
-			#chop $ret;
+
+			
+			fprintf(STDERR, "%s %s %s", $this->role, $ret, $arg);
 			
 			if($ret == "ok\n") break;
 			if($ret == "error\n") throw new RPCException($args);
@@ -149,24 +151,29 @@ class RPC {
 				$arg = explode(" ", $ret);
 				$cmd = $arg[0];
 				if($cmd == "stub") {
-					$ret = call_user_func(array($this->objects[$arg[1]], $arg[2]), $args); 
+					$ret = call_user_func_array(array($this->objects[$arg[1]], $arg[2]), $args); 
 					$this->pack($ret, "ok\n");
 				}
 				elseif($cmd == "apply") {
-					$ret = call_user_func(array($arg[1], $arg[2]), $args); 
+					$ret = call_user_func_array(array($arg[1], $arg[2]), $args); 
 					$this->pack($ret, "ok\n");
 				}
 				elseif($cmd == "call") {
-					$ret = call_user_func($arg[1], $args); 
+					echo $arg[1]." args=".print_r($args, true);
+					$ret = call_user_func_array($arg[1], $args); 
 					$this->pack($ret, "ok\n");
 				}
 				elseif($cmd == "eval") {
 					$buf = fread($pipe, 4);
 					if(strlen($buf) != 4) throw new RPCException("Разрыв соединения");
 					$len = unpack("L", $buf);
+					$len = $len[1];
 					$buf = fread($pipe, $len);
 					if(strlen($buf) != $len) throw new RPCException("Разрыв соединения");
 					$ret = eval($buf);
+					if ( $ret === false && ( $error = error_get_last() ) )
+						throw new RPCException("Ошибка в eval: ".$error['type']." ".$error['message']." ".$error['file'].":".$error['line']);
+							
 					$this->pack($ret, "ok\n");
 				}
 				else {

@@ -13,24 +13,27 @@ $this->breadcrumbs=array(
 
 <style>
 .legend table { width: auto }
+.menuis .active { background-color: MistyRose; border: solid 1px Salmon; }
+.menuis .noactive, .menuis .active { float: left; margin-right: 10px; padding: 2px }
 </style>
 
 
 <h1><?php echo $model->name ?></h1>
 
-<p>
+<div class="menuis">
 <?php
-$type = $_REQUEST["type"];
+$type = isset($_REQUEST["type"])? $_REQUEST["type"]: $model->type;
 $filter = $_REQUEST["Filter"];
-foreach(array(""=>"Таблица", "square"=>"Квадратный отчёт", "chart"=>"Круговая диаграмма", "flot"=>"График") as $a=>$b) {
+foreach(array("tab"=>"Таблица", "square"=>"Квадратный отчёт", "chart"=>"Круговая диаграмма", "flot"=>"График") as $a=>$b) {
 	$param = array('site/report', 'id'=>$model->id);
-	if($a) { $param["type"] = $a; $src = "&type=$a"; }
-	else $src = "";
-	echo CHtml::link($b, $param, array("onclick"=>"js:location = String(location).replace(/&type=\w+|$/, '$src'); return false"))." ";
+	$param["type"] = $a;
+	$src = "&type=$a";
+	echo "<div class=".($type==$a? "active": "noactive").">".CHtml::link($b, $param, array("onclick"=>"js:location = String(location).replace(/&type=\w+|$/, '$src'); return false"))."</div>";
 }
 
 ?>
-</p>
+</div>
+
 
 <p>
 
@@ -113,7 +116,7 @@ echo CHtml::hiddenField("id", $model->id);
 </div><!-- search-form -->
 </div>
 
-<?php if(!isset($type)): ?>
+<?php if($type == 'tab'): ?>
 
 <?php
 

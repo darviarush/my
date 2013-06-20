@@ -139,6 +139,11 @@ var Operators = <?php echo CJavaScript::encode($operators) ?>
 <div id=preview-sql style="display:none"><?php echo CHtml::encode($model->sql) ?></div>
 
 
+<div id=report-type>Тип отчёта по умолчанию: <?php
+$report_type = array("tab"=>"Таблица", "square"=>"Квадратный", "chart"=>"Круговая диаграмма", "flot"=>"График");
+foreach($report_type as $type=>$name) echo "<input type=radio name=report_type value=$type onchange='save()'".($model->type == $type? " checked": "")."> ".CHtml::encode($name);
+?></div>
+
 <div class=grid-view>
 <table id=square class=items>
 <tr><th><th>Квадратный отчёт<th>Квадратный отчёт. Итоги<th>Круговая диаграмма<th>График<th>Автодополнение
@@ -147,7 +152,7 @@ var Operators = <?php echo CJavaScript::encode($operators) ?>
 <td id=report-square-x onclick='show_field.call(this)' title="Ячейки верхней строки таблицы. По умолчанию - 1-й столбец. Должно начинаться со столбца (без $) по которому будет происходить объединение. Для суммирования столбца нужно добавлять :sum, для подсчёта - :count. Например: id $name">
 <td id=report-square-cut onclick='show_field.call(this)' title="Ячейка верхнего левого угла таблицы. Формат - html. Может содержать столбцы. Для суммирования столбца нужно добавлять :sum, для подсчёта - :count. Например: $id:count \ $sum:sum">
 <td id=report-chart-x onclick='show_field.call(this)' title="Столбец, по которому будет строится круговая диаграмма. Должен быть числовым. По умолчанию - 1-й. Диаграмма сама вычислит процент. Например: count">
-<td id=report-flot-x onclick='show_field.call(this)' title="Стобцы для значений по оси X. Если столбцов несколько, то на графике будет несколько линий. По умолчанию берётся 1-й столбец. Например: count sum">
+<td id=report-flot-x onclick='show_field.call(this)' title="Стобцы для значений по оси X. Если столбцов несколько, то на графике будет несколько линий. По умолчанию берутся все столбцы, кроме первого. Например: count sum">
 <td id=report-autocomplete onclick='show_field.call(this)' title="Формат строки выпадающего списка автодополнения в фильтре соответствующего столбца. По умолчанию - соответствующий столбец. Формат - html. Например: &amp;lt;sup&amp;gt;$count &amp;lt;sup&amp;gt;$name&amp;lt;/sup&amp;gt;&amp;lt;/sup&amp;gt;">
 <tr><th>y
 <td id=report-square-y onclick='show_field.call(this)' title="Ячейки левого крайнего столбца таблицы. По умолчанию - 2-й столбец. Можно сделать из него несколько: $a:sum&amp;lt;td&amp;gt;$b:sum&amp;lt;td&amp;gt;$c:count. Должно начинаться со столбца (без $) по которому будет происходить объединение. Для суммирования столбца нужно добавлять :sum, для подсчёта - :count. Например: now $now&amp;lt;td&amp;gt;$count:sum&amp;lt;td&amp;gt;$sum:sum">
@@ -230,6 +235,7 @@ function save() {
 	var name = $("#report-name").text()
 	var id = $("#report-id").text()
 	var for_users = $("#report-for_users").attr("checked")? 1: 0
+	var type = $("#report-type input[type=radio]:checked").val()
 	json['square'] = {
 		square_x: $("#report-square-x").text(),
 		square_y: $("#report-square-y").text(),
@@ -251,7 +257,7 @@ function save() {
 	console.log('saving='+save_counter+' '+caller)
 	$.ajax({
 		url: <?php echo CJavaScript::encode(Yii::app()->createUrl('site/reportqbesave')) ?>,
-		data: {content: json, name: name, id: id, for_users: for_users, explain: $("#preview-sql").css('display') != 'none'? 1: -1 },
+		data: {content: json, name: name, id: id, for_users: for_users, type: type, explain: $("#preview-sql").css('display') != 'none'? 1: -1 },
 		error: function(XMLHttpRequest, textStatus, errorThrown) {
 			$("#preloader").attr("src", "images/error.png")
 			$("#error").html('ошибка '+textStatus+" "+errorThrown+' '+XMLHttpRequest.responseText)
