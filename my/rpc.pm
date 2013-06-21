@@ -81,8 +81,10 @@ sub json_quote {
 		$val = "$val";
 	} elsif(ref $val) {
 		my $objects = $self->{objects};
-		my $num = %$objects + 0;
+		my $num = int $val; #%$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
+		warn "$self->{role} new bulo=".Dumper($objects)." add($num) ".Dumper($val) if $self->{warn};
 		$objects->{$num} = $val;
+		warn "$self->{role} new stalo=".Dumper($objects) if $self->{warn};
 		$val = "{".utils::json_quote($self->{bless}).":$num}";
 	}
 	else { $val = utils::json_quote($val) }
@@ -95,15 +97,6 @@ sub pack {
 	local ($,, $\) = ();
 	my $pipe = $self->{w};
 	my ($so, $flag, @json) = (0, 1);
-	
-	#s->pack eval 0 
-	#c->pack destroy 0 0
-	#s-> destroy 0 0 []
-	#s->pack ok
-	#c-> testok
-	
-	#warn "$self->{role} pack: `$cmd` $data";#.Dumper($data);
-	#print $pipe $cmd if defined $cmd;
 	
 	utils::walk_data($data, sub {
 		my ($ref, $key) = @_;
@@ -123,6 +116,8 @@ sub pack {
 		$so--;
 		$flag = 1;
 	});
+	
+	warn "$self->{role} -> `$cmd` ".join("", @json) if $self->{warn};
 	
 	print $pipe $cmd, "\n", @json, "\n";
 	return $self;
@@ -183,17 +178,17 @@ sub ret {
 	
 	for(;;) {	# клиент послал запрос
 		my $ret = <$pipe>;
-		#warn("$self->{role} closed: ".Dumper([caller(1)])), 
+		$self->{warn} && warn("$self->{role} closed: ".Dumper([caller(1)])), 
 		return unless defined $ret;	# закрыт канал
 		my $arg = scalar <$pipe>;
 		$args = $self->unpack($arg);
 		
-		#warn "$self->{role} $ret $arg\n";
-		
-		last if $ret eq "ok\n";
-		die $args if $ret eq "error\n";
-	
 		chop $ret;
+		
+		warn "$self->{role} <- $ret $arg\n" if $self->{warn};
+		
+		last if $ret eq "ok";
+		die $args if $ret eq "error";
 		
 		eval {
 		
@@ -207,10 +202,12 @@ sub ret {
 			}
 			elsif($cmd eq "set") {
 				$self->{objects}->{$arg1}->{$args->[0]} = $args->[1];
-				$self->pack("ok", 1)
+				$self->pack("ok", 1);
 			}
 			elsif($cmd eq "destroy") {
+				warn "$self->{role} del bulo=".Dumper($self->{objects}) if $self->{warn};
 				delete $self->{objects}->{$arg1};
+				warn "$self->{role} del stalo=".Dumper($self->{objects}) if $self->{warn};
 				$self->pack("ok", undef);
 			}
 			elsif($cmd eq "apply") {
@@ -272,8 +269,9 @@ use Data::Dumper;
 
 sub send {
 	my ($self, $cmd, $args) = @_;
-	warn "$cmd=".Dumper($args);
-	$self->{rpc}->pack("$cmd $self->{num}", $args)->ret
+	my $ret = $self->{rpc}->pack("$cmd $self->{num}", $args)->ret;
+	#warn "$cmd=".Dumper($args)."==>".Dumper($ret);
+	$ret
 }
 
 sub TIEHASH { my ($cls, $rpc, $num) = @_; bless {rpc => $rpc, num => $num}, $cls }
