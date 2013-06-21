@@ -50,7 +50,7 @@ sub new {
 sub close {
 	my ($self) = @_;
 	local ($,, $\) = ();
-	$self->pack([], "ok\n");
+	$self->pack("ok", []);
 	close $self->{w} or die "Не закрыт поток записи";
 	close $self->{r} or die "Не закрыт поток чтения";
 }
@@ -91,33 +91,40 @@ sub json_quote {
 
 # превращает в json и сразу отправляет. Объекты складирует в $self->{objects}
 sub pack {
-	my ($self, $data, $cmd) = @_;
+	my ($self, $cmd, $data) = @_;
 	local ($,, $\) = ();
 	my $pipe = $self->{w};
-	my ($so, $flag) = (0, 1);
+	my ($so, $flag, @json) = (0, 1);
 	
-	print $pipe $cmd if defined $cmd;
+	#s->pack eval 0 
+	#c->pack destroy 0 0
+	#s-> destroy 0 0 []
+	#s->pack ok
+	#c-> testok
+	
+	#warn "$self->{role} pack: `$cmd` $data";#.Dumper($data);
+	#print $pipe $cmd if defined $cmd;
 	
 	utils::walk_data($data, sub {
 		my ($ref, $key) = @_;
-		print $pipe "," if $flag and $so;
+		push @json, "," if $flag and $so;
 		$flag = 1;
-		print $pipe utils::json_quote($key), ":" if defined $key;
-		print $pipe $self->json_quote($$ref);
+		push @json, utils::json_quote($key), ":" if defined $key;
+		push @json, $self->json_quote($$ref);
 	}, sub {
 		my ($ref, $key, $class) = @_;
-		print $pipe "," if $so++ and $flag;
-		print $pipe utils::json_quote($key), ":" if defined $key;
-		print $pipe $class == 0? "[": "{";
+		push @json, "," if $so++ and $flag;
+		push @json, utils::json_quote($key), ":" if defined $key;
+		push @json, $class == 0? "[": "{";
 		$flag = 0;
 	}, sub {
 		my ($ref, $key, $class) = @_;
-		print $pipe $class == 0? "]": "}";
+		push @json, $class == 0? "]": "}";
 		$so--;
 		$flag = 1;
 	});
 	
-	print $pipe "\n";
+	print $pipe $cmd, "\n", @json, "\n";
 	return $self;
 }
 
@@ -151,24 +158,21 @@ sub unpack {
 # вызывает функцию
 sub call {
 	my ($self, $name, @args) = @_;
-	$self->pack(\@args, "call $name ".(wantarray?1:0)."\n")->ret;
+	$self->pack("call $name ".(wantarray?1:0), \@args)->ret;
 }
 
 # вызывает метод
 sub apply {
 	my ($self, $class, $name, @args) = @_;
-	$self->pack(\@args, "apply $class $name ".(wantarray?1:0)."\n")->ret;
+	$self->pack("apply $class $name ".(wantarray?1:0), \@args)->ret;
 }
 
 # выполняет код
 sub eval {
-	my ($self, $eval, @args) = @_;
-	local ($,, $\) = ();
-	my $pipe = $self->{w};
-	$self->pack(\@args, "eval ".(wantarray?1:0)."\n");
-	print $pipe pack("L", length $eval), $eval;
-	$self->ret;
+	my ($self, @args) = @_;
+	$self->pack("eval ".(wantarray?1:0), \@args)->ret;
 }
+
 
 # получает и возвращает данные и устанавливает ссылочные параметры
 sub ret {
@@ -195,58 +199,41 @@ sub ret {
 		
 			my ($cmd, $arg1, $arg2, $arg3) = split / /, $ret;
 			if($cmd eq "stub") {
-				if($arg3) { @ret = $self->{objects}->{$arg1}->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-				else { $self->pack(scalar $self->{objects}->{$arg1}->$arg2(@$args), "ok\n") }
+				if($arg3) { @ret = $self->{objects}->{$arg1}->$arg2(@$args); $self->pack("ok", \@ret) }
+				else { $self->pack("ok", scalar $self->{objects}->{$arg1}->$arg2(@$args)) }
 			}
 			elsif($cmd eq "get") {
-				$self->pack($self->{objects}->{$arg1}->{$args->{key}}, "ok\n")
+				$self->pack("ok", $self->{objects}->{$arg1}->{$args->[0]})
 			}
 			elsif($cmd eq "set") {
-				$self->{objects}->{$arg1}->{$args->{key}} = $args->{val};
-				$self->pack(1, "ok\n")
-			}
-			elsif($cmd eq "del") {
-				delete $self->{objects}->{$arg1}->{$args->{key}};
-				$self->pack(1, "ok\n");
-			}
-			elsif($cmd eq "clear") {
-				%{$self->{objects}->{$arg1}} = ();
-				$self->pack(1, "ok\n");
-			}
-			elsif($cmd eq "in") {
-				$self->pack(exists $self->{objects}->{$arg1}->{$args->{key}}, "ok\n")
-			}
-			elsif($cmd eq "len") {
-				$self->pack(%{$self->{objects}->{$arg1}}+0, "ok\n")
+				$self->{objects}->{$arg1}->{$args->[0]} = $args->[1];
+				$self->pack("ok", 1)
 			}
 			elsif($cmd eq "destroy") {
 				delete $self->{objects}->{$arg1};
-				$self->pack(undef, "ok\n");
+				$self->pack("ok", undef);
 			}
 			elsif($cmd eq "apply") {
-				if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack(\@ret, "ok\n") }
-				else { $self->pack(scalar $arg1->$arg2(@$args), "ok\n") }
+				if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack("ok", \@ret) }
+				else { $self->pack("ok", scalar $arg1->$arg2(@$args)) }
 				die $@ // $! if $@ // $!;
 			}
 			elsif($cmd eq "call") {
-				if($arg2) { @ret = eval $arg1.'(@$args)'; $self->pack(\@ret, "ok\n") }
-				else { $self->pack(scalar eval($arg1.'(@$args)'), "ok\n") }
+				if($arg2) { @ret = eval $arg1.'(@$args)'; $self->pack("ok", \@ret) }
+				else { $self->pack("ok", scalar eval($arg1.'(@$args)')) }
 			}
 			elsif($cmd eq "eval") {
-				my $buf;
-				die "Разрыв соединения" if read($pipe, $buf, 4) != 4;
-				my $len = unpack("L", $buf);
-				die "Разрыв соединения" if read($pipe, $buf, $len) != $len;
-				if($arg1) { @ret = eval $buf }
-				else { @ret = scalar eval $buf }
+				my $eval = shift @$args;
+				if($arg1) { @ret = eval $eval }
+				else { @ret = scalar eval $eval }
 				die $@ // $! if $@ // $!;
-				$self->pack($arg1? \@ret: $ret[0], "ok\n");
+				$self->pack("ok", $arg1? \@ret: $ret[0]);
 			}
 			else {
 				die "$self->{role} Неизвестная команда `$cmd` `$ret` `$arg`";
 			}
 		};
-		$self->pack($@ // $!, "error\n") if $@ // $!;
+		$self->pack("error", $@ // $!) if $@ // $!;
 	}
 
 	return wantarray && ref $args eq "ARRAY"? @$args: $args;
@@ -270,13 +257,13 @@ sub AUTOLOAD {
 	$AUTOLOAD =~ /\w+$/;
 	my $name = $&;
 	$self = tied %$self;
-	$self->{rpc}->pack(\@param, "stub $self->{num} $name ".(wantarray?1:0)."\n")->ret;
+	$self->{rpc}->pack("stub $self->{num} $name ".(wantarray?1:0), \@param)->ret;
 }
 
 sub DESTROY {
 	my ($self, @param) = @_;
 	$self = tied %$self;
-	$self->{rpc}->pack(\@param, "destroy $self->{num} ".(wantarray?1:0)."\n")->ret;
+	$self->{rpc}->pack("destroy $self->{num} ".(wantarray?1:0), \@param)->ret;
 }
 
 package rpc::prestub;
@@ -286,16 +273,16 @@ use Data::Dumper;
 sub send {
 	my ($self, $cmd, $args) = @_;
 	warn "$cmd=".Dumper($args);
-	$self->{rpc}->pack($args, "$cmd $self->{num}\n")->ret
+	$self->{rpc}->pack("$cmd $self->{num}", $args)->ret
 }
 
 sub TIEHASH { my ($cls, $rpc, $num) = @_; bless {rpc => $rpc, num => $num}, $cls }
-sub FETCH { my ($self, $key) = @_;  $self->send("get", {key=>$key}) }
-sub STORE { my ($self, $key, $val) = @_; $self->send("set", {key=>$key, val=>$val}) }
-sub DELETE { my ($self, $key) = @_; $self->send("del", {key=>$key}) }
-sub CLEAR { my ($self) = @_; $self->send("clear", {}) }
-sub EXISTS { my ($self, $key) = @_; $self->send("in", {key=>$key}) }
-sub SCALAR { my ($self) = @_; $self->send("len", {}) }
+sub FETCH { my ($self, $key) = @_; $self->send("get", [$key]) }
+sub STORE { my ($self, $key, $val) = @_; $self->send("set", [$key, $val]) }
+#sub DELETE { my ($self, $key) = @_; $self->send("del", {key=>$key}) }
+#sub CLEAR { my ($self) = @_; $self->send("clear", {}) }
+#sub EXISTS { my ($self, $key) = @_; $self->send("in", {key=>$key}) }
+#sub SCALAR { my ($self) = @_; $self->send("len", {}) }
 
 #    FIRSTKEY this
 #    NEXTKEY this, lastkey

@@ -1,4 +1,4 @@
-use Test::More tests => 14;
+use Test::More tests => 17;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;
@@ -50,14 +50,30 @@ like($header, qr/Content-Type: image\/gif/);
 
 delete ${"main::"}{"cgi"};
 
+$test1 = $rpc->eval("'test1'");
+is($test1, "test1");
+
 @ret = $rpc->eval("\$args->[0]->call('reverse', 1,2,\@\$args)", $rpc, 4);
 is_deeply(\@ret, [4,$rpc,2,1]);
+
+$rpc->eval("test");
+
 
 $bless = $rpc->eval("\$args->[0]->{bless}", $rpc);
 is($bless, $rpc->{bless});
 
+$myobj = bless {}, "myclass";
+$ret = $rpc->eval("\$args->[0]->{x10} = 10", $myobj);
+is($ret, 1);
+is($myobj->{'x10'}, 10);
+
+$ret = $rpc->eval("\$args->[0]->{x10}", $myobj);
+is($ret, 10);
+
 
 $rpc->close;
+
+
 
 
 $rpc = rpc->new('php');
@@ -67,6 +83,11 @@ is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
 
 @ret = $rpc->call("array_reverse", [1,[2,4],{"f"=>"p"},3]);
 is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
+
+eval { $rpc->eval("throw new Exception('test exception')") };
+like($@, qr/test exception/);
+
+
 
 $rpc->close;
 

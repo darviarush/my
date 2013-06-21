@@ -72,10 +72,8 @@ class RPC {
 	}
 
 	# превращает в json и сразу отправляет. Объекты складирует в $this->objects
-	function pack($data, $cmd = null) {
+	function pack($cmd, $data) {
 		$pipe = $this->w;
-		
-		if($cmd !== null) fwrite($pipe, $cmd);
 		
 		if(is_array($data))	array_walk_recursive($data, function(&$val, $key) {
 			if($val instanceof RPCstub) $val = array($this->stub => $val->num);
@@ -85,6 +83,7 @@ class RPC {
 			}
 		});
 		
+		fwrite($pipe, "$cmd\n");
 		fwrite($pipe, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK));
 		fwrite($pipe, "\n");
 		flush($pipe);
@@ -109,24 +108,18 @@ class RPC {
 	# вызывает функцию
 	function call($name) {
 		$args = func_get_args(); array_shift($args);
-		return $this->pack($args, "call $name ".($this->wantarray?1:0)."\n")->ret();
+		return $this->pack("call $name ".$this->wantarray, $args)->ret();
 	}
 
 	# вызывает метод
 	function apply($class, $name) {
 		$args = func_get_args(); array_shift($args); array_shift($args);
-		$this->pack($args, "apply $class $name ".($this->wantarray?1:0)."\n")->ret;
+		$this->pack("apply $class $name ".$this->wantarray, $args)->ret;
 	}
 
-	# выполняет код
-	function evaluate($eval) {
-		$pipe = $this->w;
-		$args = func_get_args(); array_shift($args);
-		$this->pack($args, "eval ".($this->wantarray?1:0)."\n");
-		fwrite($pipe, pack("L", strlen($eval)));
-		fwrite($pipe, $eval);
-		flush($pipe);
-		$this->ret;
+	# выполняет код evaluate $eval, $args...
+	function evaluate() {
+		$this->pack("eval ".$this->wantarray, func_get_args())->ret;
 	}
 
 	# получает и возвращает данные и устанавливает ссылочные параметры
@@ -140,11 +133,10 @@ class RPC {
 			$args = $this->unpack($arg);
 
 			
-			fprintf(STDERR, "%s %s %s", $this->role, $ret, $arg);
+			#fprintf(STDERR, "%s %s %s", $this->role, $ret, $arg);
 			
 			if($ret == "ok\n") break;
 			if($ret == "error\n") throw new RPCException($args);
-			#$ret = trim($ret);
 			
 			try {
 			
@@ -152,35 +144,38 @@ class RPC {
 				$cmd = $arg[0];
 				if($cmd == "stub") {
 					$ret = call_user_func_array(array($this->objects[$arg[1]], $arg[2]), $args); 
-					$this->pack($ret, "ok\n");
+					$this->pack("ok", $ret);
+				}
+				if($cmd == "get") {
+					$ret = $this->objects[$arg[1]][$args[0]]; 
+					$this->pack("ok", $ret);
+				}
+				if($cmd == "set") {
+					$this->objects[$arg[1]][$args[0]] = $args[1];
+					$this->pack("ok", 1);
 				}
 				elseif($cmd == "apply") {
 					$ret = call_user_func_array(array($arg[1], $arg[2]), $args); 
-					$this->pack($ret, "ok\n");
+					$this->pack("ok", $ret);
 				}
 				elseif($cmd == "call") {
 					echo $arg[1]." args=".print_r($args, true);
 					$ret = call_user_func_array($arg[1], $args); 
-					$this->pack($ret, "ok\n");
+					$this->pack("ok", $ret);
 				}
 				elseif($cmd == "eval") {
-					$buf = fread($pipe, 4);
-					if(strlen($buf) != 4) throw new RPCException("Разрыв соединения");
-					$len = unpack("L", $buf);
-					$len = $len[1];
-					$buf = fread($pipe, $len);
-					if(strlen($buf) != $len) throw new RPCException("Разрыв соединения");
+					$buf = array_shift($args);
 					$ret = eval($buf);
 					if ( $ret === false && ( $error = error_get_last() ) )
 						throw new RPCException("Ошибка в eval: ".$error['type']." ".$error['message']." ".$error['file'].":".$error['line']);
 							
-					$this->pack($ret, "ok\n");
+					$this->pack("ok", $ret);
 				}
 				else {
 					throw new RPCException("Неизвестная команда `$cmd`");
 				}
 			} catch(Exception $e) {
-				$this->pack($e->getMessage(), "error\n");
+				$this->pack("error", $e->getMessage());
 			}
 		}
 
@@ -201,7 +196,15 @@ class RPCstub {
 	public $num, $rpc;
 	
 	function __call($name, $param) {
-		$this->rpc->pack($param, "stub ".$this->num." $name ".($this->wantarray? 1: 0)."\n")->ret;
+		return $this->rpc->pack("stub ".$this->num, $param)->ret;
+	}
+	
+	function __get($key) {
+		return $this->rpc->pack("get ".$this->num, array($key))->ret;
+	}
+	
+	function __set($key, $val) {
+		return $this->rpc->pack("set ".$this->num, array($key, $val))->ret;
 	}
 }
 
