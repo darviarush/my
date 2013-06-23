@@ -43,7 +43,7 @@ sub new {
 		exec $prog or die "Ошибка создания канала. $!";
 	}
 		
-	bless {r => $reader, w => $writer, prog => $prog, objects => {}, bless => "\0bless\0", stub => "\0stub\0", role => "SERVER"}, $cls;
+	bless {r => $reader, w => $writer, prog => $prog, objects => {}, bless => "\0bless\0", stub => "\0stub\0", role => "MAJOR"}, $cls;
 }
 
 # закрывает соединение
@@ -62,7 +62,7 @@ sub client {
 	open my $w, ">&=5" or die "NOT ASSIGN OUT: $!";
 	#open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
 	#open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
-	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "CLIENT"}, $cls;
+	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "MINOR"}, $cls;
 	select $r; $| = 1;
 	select $w; $| = 1;
 	#open STDIN, "/dev/null";
@@ -81,10 +81,9 @@ sub json_quote {
 		$val = "$val";
 	} elsif(ref $val) {
 		my $objects = $self->{objects};
-		my $num = int $val; #%$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
-		warn "$self->{role} new bulo=".Dumper($objects)." add($num) ".Dumper($val) if $self->{warn};
+		my $num = %$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
 		$objects->{$num} = $val;
-		warn "$self->{role} new stalo=".Dumper($objects) if $self->{warn};
+		warn "$self->{role} add($num) =".Dumper($objects) if $self->{warn} >= 2;
 		$val = "{".utils::json_quote($self->{bless}).":$num}";
 	}
 	else { $val = utils::json_quote($val) }
@@ -117,9 +116,10 @@ sub pack {
 		$flag = 1;
 	});
 	
-	warn "$self->{role} -> `$cmd` ".join("", @json) if $self->{warn};
+	warn "$self->{role} -> `$cmd` ".join("", @json)." erase=".join(",", @{$self->{erase}}) if $self->{warn};
 	
-	print $pipe $cmd, "\n", @json, "\n";
+	print $pipe $cmd, "\n", @json, "\n", join(",", @{$self->{erase}}), "\n";
+	@{$self->{erase}} = ();
 	return $self;
 }
 
@@ -168,27 +168,43 @@ sub eval {
 	$self->pack("eval ".(wantarray?1:0), \@args)->ret;
 }
 
+# устанавливает warn на миноре
+sub warn {
+	my ($self, $val) = @_;
+	$self->{warn} = $val+=0;
+	$self->pack("warn", $val)->ret;
+}
+
+# удаляет ссылки на объекты из objects
+sub erase {
+	my ($self, $nums) = @_;
+	my $objects = $self->{objects};
+	delete $objects->{$_} for @$nums;
+}
 
 # получает и возвращает данные и устанавливает ссылочные параметры
 sub ret {
 	my ($self) = @_;
 	local ($,, $\) = ();
 	my $pipe = $self->{r};
-	my (@ret, $args);
+	my (@ret, $args, @nums);
 	
 	for(;;) {	# клиент послал запрос
 		my $ret = <$pipe>;
 		$self->{warn} && warn("$self->{role} closed: ".Dumper([caller(1)])), 
 		return unless defined $ret;	# закрыт канал
 		my $arg = scalar <$pipe>;
+		my $nums = scalar <$pipe>;
+		chop $nums;
+		@nums = split /,/, $nums;
 		$args = $self->unpack($arg);
 		
 		chop $ret;
 		
-		warn "$self->{role} <- $ret $arg\n" if $self->{warn};
+		warn "$self->{role} <- $ret $arg $nums\n" if $self->{warn};
 		
-		last if $ret eq "ok";
-		die $args if $ret eq "error";
+		$self->erase(\@nums), last if $ret eq "ok";
+		$self->erase(\@nums), die $args if $ret eq "error";
 		
 		eval {
 		
@@ -204,11 +220,9 @@ sub ret {
 				$self->{objects}->{$arg1}->{$args->[0]} = $args->[1];
 				$self->pack("ok", 1);
 			}
-			elsif($cmd eq "destroy") {
-				warn "$self->{role} del bulo=".Dumper($self->{objects}) if $self->{warn};
-				delete $self->{objects}->{$arg1};
-				warn "$self->{role} del stalo=".Dumper($self->{objects}) if $self->{warn};
-				$self->pack("ok", undef);
+			elsif($cmd eq "warn") {
+				$self->{warn} = $args;
+				$self->pack("ok", 1);
 			}
 			elsif($cmd eq "apply") {
 				if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack("ok", \@ret) }
@@ -231,6 +245,7 @@ sub ret {
 			}
 		};
 		$self->pack("error", $@ // $!) if $@ // $!;
+		$self->erase(\@nums); 
 	}
 
 	return wantarray && ref $args eq "ARRAY"? @$args: $args;
@@ -258,9 +273,9 @@ sub AUTOLOAD {
 }
 
 sub DESTROY {
-	my ($self, @param) = @_;
+	my ($self) = @_;
 	$self = tied %$self;
-	$self->{rpc}->pack("destroy $self->{num} ".(wantarray?1:0), \@param)->ret;
+	push @{$self->{rpc}->{erase}}, $self->{num};
 }
 
 package rpc::prestub;

@@ -63,7 +63,7 @@ $rpc->eval("test");
 $bless = $rpc->eval("\$args->[0]->{bless}", $rpc);
 is($bless, $rpc->{bless});
 
-$rpc->{warn} = 1;
+#$rpc->warn(1);
 
 $myobj = bless {}, "myclass";
 $ret = $rpc->eval("\$args->[0]->{x10} = 10", $myobj);
@@ -90,7 +90,13 @@ is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
 eval { $rpc->eval("throw new Exception('test exception');") };
 like($@, qr/test exception/);
 
+$myobj = bless {}, "myclass";
+$ret = $rpc->eval("return \$args[0]->x10 = 10;", $myobj);
+is($ret, 10);
+is($myobj->{'x10'}, 10);
+
+$ret = $rpc->eval("return \$args[0]->x10;", $myobj);
+is($ret, 10);
 
 
 $rpc->close;
-

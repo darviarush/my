@@ -9,14 +9,14 @@ class RPC {
 		"ruby" => ""
 	);
 
-	public $r, $w, $objects, $prog, $bless, $stub, $role, $process, $wantarray = 1;
+	public $r, $w, $objects, $prog, $bless, $stub, $role, $process, $wantarray = 1, $erase = array(), $warn = 0;
 
 
 
 	# конструктор. Создаёт соединение
 	function __construct($prog = null) {
 	
-		if($prog === null) return $this->client();
+		if($prog === null) return $this->minor();
 		
 		$descriptorspec = array(
 			4 => array("pipe", "r"),// stdin это канал, из которого потомок будет читать
@@ -42,7 +42,7 @@ class RPC {
 		$this->prog = $prog;
 		$this->bless = "\0bless\0";
 		$this->stub = "\0stub\0";
-		$this->role = "SERVER";
+		$this->role = "MAJOR";
 	}
 
 	# закрывает соединение
@@ -53,8 +53,8 @@ class RPC {
 		proc_close($this->process);
 	}
 
-	# создаёт клиента
-	function client() {
+	# создаёт подчинённого
+	function minor() {
 	
 		$r = fopen("php://fd/4", "rb");
 		if(!$r) throw new RPCException("NOT DUP IN");
@@ -66,7 +66,7 @@ class RPC {
 		$this->prog = $prog;
 		$this->bless = "\0stub\0";
 		$this->stub = "\0bless\0";
-		$this->role = "CLIENT";
+		$this->role = "MINOR";
 
 		$this->ret();
 	}
@@ -83,10 +83,16 @@ class RPC {
 			}
 		});
 		
+		$json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
+		
+		if($this->warn) fprintf(STDERR, "%s -> `%s` %s %s\n", $this->role, $cmd, $json, implode(",", $this->erase));
+		
 		fwrite($pipe, "$cmd\n");
-		fwrite($pipe, json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK));
+		fwrite($pipe, $json);
 		fwrite($pipe, "\n");
+		fwrite($pipe, implode("\n", $this->erase)."\n");
 		flush($pipe);
+		$this->erase = array();
 		return $this;
 	}
 
@@ -97,8 +103,8 @@ class RPC {
 		
 		if(is_array($data)) array_walk_recursive($data, function(&$val, $key) {
 			if(is_array($val)) {
-				if(isset($val[$stub])) $val = $this->stub($val[$stub]);
-				else if(isset($val[$bless])) $val = $this->objects[$val[$bless]];
+				if(isset($val[$this->stub])) $val = $this->stub($val[$this->stub]);
+				else if(isset($val[$this->bless])) $val = $this->objects[$val[$this->bless]];
 			}
 		});
 		
@@ -122,21 +128,34 @@ class RPC {
 		$this->pack("eval ".$this->wantarray, func_get_args())->ret;
 	}
 
+	# устанавливает warn на миноре
+	function warn($val) {
+		$this->warn = $val+=0;
+		$this->pack("warn", $val)->ret;
+	}
+
+	# удаляет ссылки на объекты из objects
+	function erase($nums) {
+		foreach($nums as $num) unset($this->objects[$num]);
+	}
+	
 	# получает и возвращает данные и устанавливает ссылочные параметры
 	function ret() {
 		$pipe = $this->r;
 		
 		for(;;) {	# клиент послал запрос
 			if(feof($pipe)) return;	# закрыт
-			$ret = fgets($pipe);
-			$arg = fgets($pipe);
+			$ret = rtrim(fgets($pipe));
+			$arg = rtrim(fgets($pipe));
+			$nums = rtrim(fgets($pipe));
+			$argnums = explode(",", $nums);
 			$args = $this->unpack($arg);
 
 			
-			#fprintf(STDERR, "%s %s %s", $this->role, $ret, $arg);
+			if($this->warn) fprintf(STDERR, "%s <- `%s` %s %s\n", $this->role, $ret, $arg, $nums);
 			
-			if($ret == "ok\n") break;
-			if($ret == "error\n") throw new RPCException($args);
+			if($ret == "ok") { $this->erase($argnums); break; }
+			if($ret == "error") { $this->erase($argnums); throw new RPCException($args); }
 			
 			try {
 			
@@ -146,12 +165,16 @@ class RPC {
 					$ret = call_user_func_array(array($this->objects[$arg[1]], $arg[2]), $args); 
 					$this->pack("ok", $ret);
 				}
-				if($cmd == "get") {
+				else if($cmd == "get") {
 					$ret = $this->objects[$arg[1]][$args[0]]; 
 					$this->pack("ok", $ret);
 				}
-				if($cmd == "set") {
+				else if($cmd == "set") {
 					$this->objects[$arg[1]][$args[0]] = $args[1];
+					$this->pack("ok", 1);
+				}
+				else if($cmd == "warn") {
+					$this->warn = $args;
 					$this->pack("ok", 1);
 				}
 				elseif($cmd == "apply") {
@@ -177,6 +200,7 @@ class RPC {
 			} catch(Exception $e) {
 				$this->pack("error", $e->getMessage());
 			}
+			$this->erase($argnums);
 		}
 
 		return $args;
