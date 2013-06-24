@@ -20,7 +20,7 @@ use utils;
 sub new {
 	my ($cls, $prog) = @_;
 	
-	goto &client unless defined $prog;
+	goto &minor unless defined $prog;
 	
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
@@ -29,7 +29,6 @@ sub new {
 	pipe $reader, $ch_writer;
 	
 	binmode $reader; binmode $writer; binmode $ch_reader; binmode $ch_writer;
-	select $reader; $|=1;
 	select $writer; $|=1;
 	
 	unless(fork) {
@@ -56,19 +55,20 @@ sub close {
 }
 
 # создаёт клиента
-sub client {
+sub minor {
 	my ($cls) = @_;
 	open my $r, "<&=4" or die "NOT ASSIGN IN: $!";
 	open my $w, ">&=5" or die "NOT ASSIGN OUT: $!";
 	#open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
 	#open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
 	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "MINOR"}, $cls;
-	select $r; $| = 1;
 	select $w; $| = 1;
 	#open STDIN, "/dev/null";
 	#open STDOUT, "< /dev/null";
-	$self->ret;
+	my @ret = $self->ret;
 	#bless($_, 'HASH') for values %{$self->{objects}};
+	warn "MINOR ENDED @ret" if $self->{warn};
+	return @ret;
 }
 
 # квотирует для передачи
@@ -116,7 +116,7 @@ sub pack {
 		$flag = 1;
 	});
 	
-	warn "$self->{role} -> `$cmd` ".join("", @json)." erase=".join(",", @{$self->{erase}}) if $self->{warn};
+	warn "$self->{role} -> `$cmd` ".join("", @json)." ".join(",", @{$self->{erase}}) if $self->{warn};
 	
 	print $pipe $cmd, "\n", @json, "\n", join(",", @{$self->{erase}}), "\n";
 	@{$self->{erase}} = ();

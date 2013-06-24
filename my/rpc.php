@@ -68,7 +68,10 @@ class RPC {
 		$this->stub = "\0bless\0";
 		$this->role = "MINOR";
 
-		$this->ret();
+		$ret = $this->ret();
+		
+		if($this->warn) fprintf(STDERR, "MINOR ENDED %s\n", $ret);
+		return $ret;
 	}
 
 	# превращает в json и сразу отправляет. Объекты складирует в $this->objects
@@ -101,13 +104,20 @@ class RPC {
 
 		$data = json_decode($data, true);
 		
-		if(is_array($data)) array_walk_recursive($data, function(&$val, $key) {
-			if(is_array($val)) {
-				if(isset($val[$this->stub])) $val = $this->stub($val[$this->stub]);
-				else if(isset($val[$this->bless])) $val = $this->objects[$val[$this->bless]];
-			}
-		});
+		if(!is_array($data)) return $data;
 		
+		$st = array(&$data);
+
+		for($i=0; $st; $i++) {
+			$val = &$st[$i];
+			
+			if(isset($val[$this->stub])) $val = $this->stub($val[$this->stub]);
+			elseif(isset($val[$this->bless])) $val = $this->objects[$val[$this->bless]];
+			else foreach($val as &$x) if(is_array($x)) $st []= &$x;
+			
+			unset($st[$i]);
+		}
+		#if($this->warn) fprintf(STDERR, "%s data=%s", $this->role, print_r($data, true));
 		return $data;
 	}
 
@@ -144,7 +154,10 @@ class RPC {
 		$pipe = $this->r;
 		
 		for(;;) {	# клиент послал запрос
-			if(feof($pipe)) return;	# закрыт
+			if(feof($pipe)) {
+				if($this->warn) fprintf(STDERR, "%s closed: %s\n", $this->role, implode("\n", debug_backtrace()));
+				return;	# закрыт
+			}
 			$ret = rtrim(fgets($pipe));
 			$arg = rtrim(fgets($pipe));
 			$nums = rtrim(fgets($pipe));
@@ -182,7 +195,6 @@ class RPC {
 					$this->pack("ok", $ret);
 				}
 				elseif($cmd == "call") {
-					echo $arg[1]." args=".print_r($args, true);
 					$ret = call_user_func_array($arg[1], $args); 
 					$this->pack("ok", $ret);
 				}
@@ -190,8 +202,8 @@ class RPC {
 					$buf = array_shift($args);
 					$ret = eval($buf);
 					if ( $ret === false && ( $error = error_get_last() ) )
-						throw new RPCException("Ошибка в eval: ".$error['type']." ".$error['message']." ".$error['file'].":".$error['line']);
-							
+						throw new RPCException("Ошибка в eval: ".$error['type']." ".$error['message']." at ".$error['file'].":".$error['line']);
+
 					$this->pack("ok", $ret);
 				}
 				else {
@@ -224,11 +236,13 @@ class RPCstub {
 	}
 	
 	function __get($key) {
+		fprintf(STDERR, "get $key\n");
 		return $this->rpc->pack("get ".$this->num, array($key))->ret;
 	}
 	
 	function __set($key, $val) {
-		return $this->rpc->pack("set ".$this->num, array($key, $val))->ret;
+		fprintf(STDERR, "set $key=$val\n");
+		$this->rpc->pack("set ".$this->num, array($key, $val))->ret;
 	}
 }
 
