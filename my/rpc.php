@@ -88,7 +88,13 @@ class RPC {
 		
 		$json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
 		
-		if($this->warn) fprintf(STDERR, "%s -> `%s` %s %s\n", $this->role, $cmd, $json, implode(",", $this->erase));
+		if($this->warn) {
+			$arr = debug_backtrace();
+			foreach($arr as &$x) {
+				$str .= $x["line"]." ".$x["class"].".".$x["function"]."(".implode(", ", $x["args"]).")\n";
+			}
+			fprintf(STDERR, "%s -> `%s` %s %s %s\n", $this->role, $cmd, $json, implode(",", $this->erase), $str);
+		}
 		
 		fwrite($pipe, "$cmd\n");
 		fwrite($pipe, $json);

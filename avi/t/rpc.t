@@ -80,6 +80,7 @@ $rpc->close;
 
 
 $rpc = rpc->new('php');
+$rpc->warn(1);
 
 @ret = $rpc->eval("return array_reverse(\$args);", 1,[2,4],{"f"=>"p"},3);
 is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
@@ -90,7 +91,7 @@ is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
 eval { $rpc->eval("throw new Exception('test exception');") };
 like($@, qr/test exception/);
 
-$rpc->warn(1);
+
 
 $myobj = bless {}, "myclass";
 $ret = $rpc->eval("return \$args[0]->x10 = 10;", $myobj);
@@ -102,3 +103,4 @@ is($ret, 10);
 
 
 $rpc->close;
+

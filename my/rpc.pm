@@ -1,7 +1,7 @@
 # заглушка
 package rpc;
 
-use IPC::Open2;
+use POSIX qw//;
 use Data::Dumper;
 
 use utils;
@@ -25,21 +25,28 @@ sub new {
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
 	
-	pipe $ch_reader, $writer;
-	pipe $reader, $ch_writer;
+	pipe $ch_reader, $writer or die "not create pipe. $!";
+	pipe $reader, $ch_writer or die "not create pipe. $!";;
 	
 	binmode $reader; binmode $writer; binmode $ch_reader; binmode $ch_writer;
-	select $writer; $|=1;
+
+	my $stdout = select $in; $| = 1;
+	select $writer; $| = 1;
+	select $ch_writer; $| = 1;
+	select $stdout;
 	
-	unless(fork) {
-		require POSIX;
+	my $pid = fork;
+	
+	die "fork. $!" if $pid < 0;
+	
+	unless($pid) {
 		my $lp = $prog{$prog};
-		$prog = sprintf $prog{$prog}, $INC{'rpc.pm'} =~ /\/rpc.pm$/ && $` if defined $lp;
+		$prog = sprintf $lp, $INC{'rpc.pm'} =~ /\/rpc.pm$/ && $` if defined $lp;
 		my $ch4 = fileno $ch_reader;
 		my $ch5 = fileno $ch_writer;
 		POSIX::dup2($ch4, 4) if $ch4 != 4;
 		POSIX::dup2($ch5, 5) if $ch5 != 5;
-		exec $prog or die "Ошибка создания канала. $!";
+		exec $prog or die "Ошибка создания подчинённого. $!";
 	}
 		
 	bless {r => $reader, w => $writer, prog => $prog, objects => {}, bless => "\0bless\0", stub => "\0stub\0", role => "MAJOR"}, $cls;
@@ -57,12 +64,16 @@ sub close {
 # создаёт клиента
 sub minor {
 	my ($cls) = @_;
+
 	open my $r, "<&=4" or die "NOT ASSIGN IN: $!";
 	open my $w, ">&=5" or die "NOT ASSIGN OUT: $!";
-	#open my $r, "<&STDIN" or die "NOT DUP STDIN: $!";
-	#open my $w, ">&STDOUT" or die "NOT DUP STDOUT: $!";
+	
+	binmode $r; binmode $w;
+	my $stdout = select $w; $| = 1;
+	select $stdout;
+
+	
 	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "MINOR"}, $cls;
-	select $w; $| = 1;
 	#open STDIN, "/dev/null";
 	#open STDOUT, "< /dev/null";
 	my @ret = $self->ret;

@@ -18,6 +18,8 @@ $this->breadcrumbs=array(
 </style>
 
 
+<?php if($model): ?>
+
 <h1><?php echo $model->name ?></h1>
 
 <div class="menuis">
@@ -217,3 +219,8 @@ echo $qbe->errorHTML();
 
 <?php endif ?>
 
+<?php else: ?>
+
+Нет отчётов.
+
+<?php endif ?>
