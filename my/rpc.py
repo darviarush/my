@@ -1,194 +1,237 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
-import shlex, subprocess
+
+import os, sys, shlex, json
 
 class RPC:
 
-	prog = {
-		"perl": "perl -Mrpc -e 'rpc.client'",
-		"php": "php -r 'require_once \"rpc.php\" rpc.client()'",
+	PROG = {
+		"perl": "perl -I'%s' -e 'require rpc; rpc.new'",
+		"php": "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
 		"python": "",
 		"ruby": ""
 	}
 
 	# конструктор. Создаёт соединение
-	def __init__(self, prog = null):
-
-		if prog === null: return self.client()
-		
-		descriptorspec = {
-			4 => {"pipe", "r"),# stdin это канал, из которого потомок будет читать
-			5 => {"pipe", "w"),# stdout это канал, в который потомок будет записывать
-			#2 => {"file", "/tmp/error-output.txt", "a"), # stderr это файл для записи
-
-		
-		prog = RPC.prog.get(prog, prog)
-		
-		args = shlex.split("/usr/bin/commandname -arg1 1 -arg2 stuff -arg3 morestuff")
-		process = subprocess.Popen(args, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		output = process.communicate(dummy_email)
-		
-		process = proc_open(prog, descriptorspec, pipe)
-		if !is_resource(process:) raise RPCException("RPC not started") 
-	# pipes выглядит теперь примерно так:
-	# 0 => записываемый дескриптор, соединённый с дочерним stdin
-	# 1 => читаемый дескриптор, соединённый с дочерним stdout
-	# Любой вывод ошибки будет присоединён к /tmp/error-output.txt
-		
-		self.process = process
-		self.r = pipe[5]
-		self.w = pipe[4]
+	def __init__(self, prog = None):
+	
 		self.prog = prog
+		self.objects = {}
+		self.warn = 0
+		self.erase = []
+		self.wantarray = 1
+	
+		if prog is None: return self.minor()
+		
+	
+		ch_reader, writer = os.pipe()
+		reader, ch_writer = os.pipe()
+		
+		pid = os.fork()
+		
+		if pid==0:
+			prog = PROG.get(prog, prog)
+			prog = prog % (os.path.dirname(__file__) + "/../my")
+			if ch_reader != 4: os.dup2(ch_reader, 4)
+			if ch_writer != 5: os.dup2(ch_writer, 5)
+			args = shlex.split(prog)
+			os.execvp(args[0], args[1:])
+		
+		self.r = os.fdopen(reader, "rb")
+		self.w = os.fdopen(writer, "wb")
 		self.bless = "\0bless\0"
 		self.stub = "\0stub\0"
-		self.role = "SERVER"
-
+		self.role = "MAJOR"
 
 	# закрывает соединение
 	def close():
-		fwrite(self.w, "ok\nnull\n")
-		fclose(self.r)
-		fclose(self.w)
-		proc_close(self.process)
+		self.w.write("ok\nnull\n")
+		self.r.close()
+		self.w.close()
 
-
-	# создаёт клиента
-	def client():
-
-		r = fopen("php:#fd/4", "rb")
-		if !is_resurse(r:) raise RPCException("NOT DUP IN")
-		w = fopen("php:#fd/5", "wb")
-		if !is_resurse(w:) raise RPCException("NOT DUP OUT")
+	# создаёт подчинённого
+	def minor():
 		
-		self.r = r
-		self.w = w
-		self.prog = prog
+		self.r = os.fdopen(4, "rb")
+		self.w = os.fdopen(5, "wb")
 		self.bless = "\0stub\0"
 		self.stub = "\0bless\0"
-		self.role = "CLIENT"
+		self.role = "MINOR"
 
-		self.ret
-
+		ret = self.ret()
+		
+		if self.warn: sys.stderr.write("MINOR ENDED %s\n" % ret)
+		return ret
 
 	# превращает в json и сразу отправляет. Объекты складирует в self.objects
-	def pack(data, cmd = null):
+	def pack(cmd, data):
 		pipe = self.w
 		
-		if cmd !== null: fwrite(pipe, cmd)
+		ret = [data]
+		st = [ret]
 		
-		if is_{data:)	array_walk_recursive(data, function(&val, key) {
-			if val instanceof RPCstub: val = {self.stub => val.num)
-			else if is_object(val:) {
-				self.objects[] = val
-				val = {self.bless => count(self.objects))
-
-)
+		while st:
+			ls = st.pop()
+			for i, val in (enumerate(ls) if isinstance(ls, list) else ls.iteritems()):
+				if isinstance(val, RPCstub):
+					ls[i] = {self.stub: val.num}
+				elif type(val) in ('instance', 'classobj'):
+					idx = len(self.objects)
+					ls[i] = {self.bless: idx}
+					self.objects[idx] = val
+				elif isinstance(val, (dict, list)):
+					st.append(val)
+				elif isinstance(val, tuple):
+					ls[i] = val = list(val)
+					st.append(val)
 		
-		fwrite(pipe, json_encode(data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK))
-		fwrite(pipe, "\n")
-		flush(pipe)
+		data = ret[0]
+		
+		json = json.dumps(data)
+		erase = self.erase.join(",")
+		
+		if self.warn: sys.stderr.write("%s . `%s` %s %s\n" % (self.role, cmd, json, erase))
+		
+		pipe.write("cmd\n")
+		pipe.write(json)
+		pipe.write("\n")
+		pipe.write(implode("\n", self.erase)."\n")
+		pipe.flush()
+		self.erase = []
 		return self
 
-
 	# распаковывает
-	def unpack(data):
+	def unpack(self, data):
 
-		data = json_decode(data)
+		data = json.loads(data)
 		
-		if is_{data:) array_walk_recursive(data, function(&val, key) {
-			if is_{val:) {
-				if stub in val: val = self.stub(val[stub])
-				elif bless in val: val = self.objects[val[bless]]
-
-)
+		ret = [data]
+		st = [ret]
+		
+		while st:
+			ls = st.pop()
+			for i, val in (enumerate(ls) if isinstance(ls, list) else ls.iteritems()):
+				if self.stub in val:
+					ls[i] = self.stub(val[self.stub])
+				elif self.bless in val: 
+					ls[i] = self.objects[val[self.bless]]
+				elif isinstance(val, (dict, list)):
+					st.append(val)
+		
+		data = ret[0]
 		
 		return data
 
-
 	# вызывает функцию
-	def call(name, args, wantarray = 1):
-		return self.pack(args, "call name ".(wantarray?1:0)."\n").ret()
-
+	def call(self, name, *av):
+		return self.pack("call %s %i" % (name, self.wantarray), av).ret()
+	}
 
 	# вызывает метод
-	def apply(class, name, args, wantarray = 1):
-		self.pack(args, "apply class name ".(wantarray?1:0)."\n").ret
+	def apply(self, cls, name, *av):
+		return self.pack("apply %s %s %i" % (cls, name, self.wantarray), av).ret()
+	}
 
+	# выполняет код eval eval, args...
+	def eval(self, *av):
+		return self.pack("eval %i" % self.wantarray, av).ret()
+	}
 
-	# выполняет код
-	def eval(eval, args, wantarray = 1):
-		pipe = self.w
-		self.pack(args, "eval ".(wantarray?1:0)."\n")
-		fwrite(pipe, pack("L", length eval))
-		fwrite(pipe, eval)
-		flush(pipe)
-		self.ret
+	# устанавливает warn на миноре
+	def warn(self, val):
+		self.warn = val+=0
+		return self.pack("warn", val).ret()
+	}
 
-
+	# удаляет ссылки на объекты из objects
+	def erase(self, nums):
+		foreach(nums as num) unset(self.objects[num])
+	}
+	
 	# получает и возвращает данные и устанавливает ссылочные параметры
-	function ret {
+	def ret():
 		pipe = self.r
 		
 		while 1:	# клиент послал запрос
-			ret = pipe.readline()
-			arg = pipe.readline()
+			if pipe.eof():
+				if self.warn: sys.stderr.write("%s closed\n" % self.role)
+				return		# закрыт
+
+			ret = pipe.readline()[:-1]
+			arg = pipe.readline()[:-1]
+			nums = pipe.readline()[:-1]
+			argnums = nums.split(",")
 			args = self.unpack(arg)
+
+			if self.warn: sys.stderr.write("%s <- `%s` %s %s\n" % (self.role, ret, arg, nums));
 			
-			if ret == "ok\n": break
-			if ret == "error\n": raise RPCException(args)
-			#ret = trim(ret)
+			if ret == "ok":
+				self.erase(argnums)
+				break
+			if ret == "error":
+				self.erase(argnums)
+				raise RPCException(args)
 			
-			try {
-			
-				arg = explode(" ", ret)
+			try:
+				arg = ret.split(",")
 				cmd = arg[0]
 				if cmd == "stub":
-					ret = call_user_func({self.objects[arg[1]], arg[2]), args) 
-					self.pack(ret, "ok\n")
-
+					ret = getattr(self.objects[arg[1]], arg[2])(*args)
+					self.pack("ok", ret)
+				elif cmd == "get":
+					ret = getattr(self.objects[arg[1]], args[0])
+					self.pack("ok", ret)
+				elif cmd == "set":
+					setattr(self.objects[arg[1]], args[0], args[1])
+					self.pack("ok", 1)
+				elif cmd == "warn":
+					self.warn = args
+					self.pack("ok", 1)
 				elif cmd == "apply":
-					ret = call_user_func({arg[1], arg[2]), args) 
-					self.pack(ret, "ok\n")
-
+					ret = getattr(globals()[arg[1]], arg[2])(*args)
+					self.pack("ok", ret)
 				elif cmd == "call":
-					ret = call_user_func(arg[1], args) 
-					self.pack(ret, "ok\n")
-
+					ret = globals()[arg[1]](*args)
+					self.pack("ok", ret)
 				elif cmd == "eval":
-					buf = fread(pipe, 4)
-					if len(buf)!= 4: raise RPCException("Разрыв соединения")
-					len = unpack("L", buf)
-					buf = fread(pipe, len)
-					if len(buf) != len: raise RPCException("Разрыв соединения")
-					ret = eval(buf)
-					self.pack(ret, "ok\n")
-
+					ret = eval(args[0])
+					self.pack("ok", ret)
 				else:
-					raise RPCException("Неизвестная команда `cmd`")
+					raise RPCException("Неизвестная команда `cmd`");
 
 			except Exception as e:
-				self.pack(e.getMessage(), "error\n")
+				self.pack("error", "%s %s" % (e.__name__, e.message))
+			
+			self.erase(argnums)
 
-
-
-		return args
-
+		return args;
+	}
 
 	# создаёт заглушку, для удалённого объекта
-	def stub(self, num):
+	def stub(num):
 		stub = RPCStub()
 		stub.num = num
 		stub.rpc = self
 		return stub
 
-}
-
 # заглушка
 class RPCstub:
 	
-	def __call__(self, *av, **kw):
-		av += kw.items()
-		self.rpc.pack(av, "stub ".self.num." name 1\n").ret
-
+	def __getattr__(self, *param, **kv):
+		return self.rpc.pack("stub %s %s %i" % (self.num, name, self.rpc.wantarray), param).ret()
+		
+	def __setattr__(self, *param, **kv):
+		return self.rpc.pack("stub %s %s %i" % (self.num, name, self.rpc.wantarray), param).ret()
+	
+	def __get__(self, key):
+		raise RPCException("__get__(%s) not implemented" % key)
+	
+	def __delattr__(self, name):
+		raise RPCException("__delattr__(%s) not implemented" % name)
+		
+	def __del__(self):
+		self.rpc.erase.append(self.num)
 
 class RPCException(Exception):
 	pass

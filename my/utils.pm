@@ -143,6 +143,7 @@ sub from_json {
 }
 
 # заходит во все хеши и массивы и запускает функцию на конце для скаляра. Второй параметр - ссылка на скаляр - ф-я может модифицировать
+# аналог array_walk_recursive в php, но с большими возможностями
 sub walk_data {
 	my ($scalar, $fn, $fn_begin, $fn_end) = @_;
 	my ($k, $v);
@@ -161,11 +162,13 @@ sub walk_data {
 
 		if($class eq "ARRAY") {
 			$fn_begin->($ref, $key, 0) if $fn_begin;
+			next if ref $$ref ne "ARRAY";
 			push @scalar, [$ref, $key, 0] if $fn_end;
 			push @scalar, reverse \(@$scalar);
 		}
 		elsif($class eq "HASH") {
 			$fn_begin->($ref, $key, 1) if $fn_begin;
+			next if ref $$ref ne "HASH";
 			push @scalar, [$ref, $key, 1] if $fn_end;
 			push @scalar, {$_=>\($scalar->{$_})} for keys %$scalar;
 		}

@@ -3,7 +3,7 @@
 class RPC {
 
 	static $PROG = array(
-		"perl" => "perl -e 'require \"%s/rpc.pm\"; rpc->new'",
+		"perl" => "perl -I'%s' -e 'require rpc; rpc->new'",
 		"php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
 		"python" => "",
 		"ruby" => ""
@@ -19,17 +19,14 @@ class RPC {
 		if($prog === null) return $this->minor();
 		
 		$descriptorspec = array(
-			4 => array("pipe", "r"),// stdin это канал, из которого потомок будет читать
-			5 => array("pipe", "w"),// stdout это канал, в который потомок будет записывать
-			#2 => array("file", "/tmp/error-output.txt", "a"), // stderr это файл для записи
+			4 => array("pipe", "rb"),	// это канал, из которого потомок будет читать
+			5 => array("pipe", "wb"),	// это канал, в который потомок будет записывать
 		);
 		
-		if(isset(self::$PROG[$prog])) {
-			$prog = self::$PROG[$prog];
-			$prog = sprintf($prog, dirname(__FILE__)."/../my");
-		}
+		$real_prog = isset(self::$PROG[$prog])? self::$PROG[$prog]: $prog;
+		$real_prog = sprintf($real_prog, dirname(__FILE__)."/../my");
 		
-		$process = proc_open($prog, $descriptorspec, $pipe);
+		$process = proc_open($real_prog, $descriptorspec, $pipe);
 		if(!is_resource($process)) throw new RPCException("RPC not started"); 
 	// $pipes выглядит теперь примерно так:
 	// 0 => записываемый дескриптор, соединённый с дочерним stdin
@@ -78,23 +75,20 @@ class RPC {
 	function pack($cmd, $data) {
 		$pipe = $this->w;
 		
-		if(is_array($data))	array_walk_recursive($data, function(&$val, $key) {
+		$fn = function(&$val, $key) {
 			if($val instanceof RPCstub) $val = array($this->stub => $val->num);
 			else if(is_object($val)) {
 				$this->objects[] = $val;
-				$val = array($this->bless => count($this->objects));
+				$val = array($this->bless => count($this->objects)-1);
 			}
-		});
+		};
+		
+		if(is_array($data)) array_walk_recursive($data, $fn);
+		else $fn($data, 0);
 		
 		$json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
 		
-		if($this->warn) {
-			$arr = debug_backtrace();
-			foreach($arr as &$x) {
-				$str .= $x["line"]." ".$x["class"].".".$x["function"]."(".implode(", ", $x["args"]).")\n";
-			}
-			fprintf(STDERR, "%s -> `%s` %s %s %s\n", $this->role, $cmd, $json, implode(",", $this->erase), $str);
-		}
+		if($this->warn) fprintf(STDERR, "%s -> `%s` %s %s\n", $this->role, $cmd, $json, implode(",", $this->erase));
 		
 		fwrite($pipe, "$cmd\n");
 		fwrite($pipe, $json);
@@ -136,18 +130,18 @@ class RPC {
 	# вызывает метод
 	function apply($class, $name) {
 		$args = func_get_args(); array_shift($args); array_shift($args);
-		$this->pack("apply $class $name ".$this->wantarray, $args)->ret;
+		return $this->pack("apply $class $name ".$this->wantarray, $args)->ret();
 	}
 
-	# выполняет код evaluate $eval, $args...
-	function evaluate() {
-		$this->pack("eval ".$this->wantarray, func_get_args())->ret;
+	# выполняет код eval $eval, $args...
+	function _eval() {
+		return $this->pack("eval ".$this->wantarray, func_get_args())->ret();
 	}
 
 	# устанавливает warn на миноре
 	function warn($val) {
 		$this->warn = $val+=0;
-		$this->pack("warn", $val)->ret;
+		return $this->pack("warn", $val)->ret();
 	}
 
 	# удаляет ссылки на объекты из objects
@@ -185,11 +179,13 @@ class RPC {
 					$this->pack("ok", $ret);
 				}
 				else if($cmd == "get") {
-					$ret = $this->objects[$arg[1]][$args[0]]; 
+					$prop = $args[0];
+					$ret = $this->objects[$arg[1]]->$prop; 
 					$this->pack("ok", $ret);
 				}
 				else if($cmd == "set") {
-					$this->objects[$arg[1]][$args[0]] = $args[1];
+					$prop = $args[0];
+					$this->objects[$arg[1]]->$prop = $args[1];
 					$this->pack("ok", 1);
 				}
 				else if($cmd == "warn") {
@@ -238,17 +234,23 @@ class RPCstub {
 	public $num, $rpc;
 	
 	function __call($name, $param) {
-		return $this->rpc->pack("stub ".$this->num, $param)->ret;
+		return $this->rpc->pack("stub ".$this->num." $name ".$this->rpc->wantarray, $param)->ret();
+	}
+
+	function __callStatic($name, $param) {
+		return $this->rpc->pack("stub ".$this->num." $name ".$this->rpc->wantarray, $param)->ret();
 	}
 	
 	function __get($key) {
-		fprintf(STDERR, "get $key\n");
-		return $this->rpc->pack("get ".$this->num, array($key))->ret;
+		return $this->rpc->pack("get ".$this->num, array($key))->ret();
 	}
 	
 	function __set($key, $val) {
-		fprintf(STDERR, "set $key=$val\n");
-		$this->rpc->pack("set ".$this->num, array($key, $val))->ret;
+		$this->rpc->pack("set ".$this->num, array($key, $val))->ret();
+	}
+	
+	function __destruct() {
+		$this->rpc->erase[] = $self->num;
 	}
 }
 

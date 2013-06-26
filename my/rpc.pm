@@ -8,7 +8,7 @@ use utils;
 
 
 %prog = (
-"perl" => "perl -e 'require \"%s/rpc.pm\"; rpc->new'",
+"perl" => "perl -I'%s' -e 'require rpc; rpc->new'",
 "php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
 "python" => "",
 "ruby" => ""
@@ -40,8 +40,8 @@ sub new {
 	die "fork. $!" if $pid < 0;
 	
 	unless($pid) {
-		my $lp = $prog{$prog};
-		$prog = sprintf $lp, $INC{'rpc.pm'} =~ /\/rpc.pm$/ && $` if defined $lp;
+		$prog = $prog{$prog};
+		$prog = sprintf $prog, $INC{'rpc.pm'} =~ /\/rpc.pm$/ && $` if defined $prog;
 		my $ch4 = fileno $ch_reader;
 		my $ch5 = fileno $ch_writer;
 		POSIX::dup2($ch4, 4) if $ch4 != 4;
