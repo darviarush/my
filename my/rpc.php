@@ -5,8 +5,8 @@ class RPC {
 	static $PROG = array(
 		"perl" => "perl -I'%s' -e 'require rpc; rpc->new'",
 		"php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
-		"python" => "",
-		"ruby" => ""
+		"python" => "python -c 'import sys; sys.path.append(\"%s\"); from rpc import RPC; RPC()'",
+		"ruby" => "ruby -I'%s' -e 'require \"rpc.rb\"; RPC.new'"
 	);
 
 	public $r, $w, $objects, $prog, $bless, $stub, $role, $process, $wantarray = 1, $erase = array(), $warn = 0;
@@ -237,9 +237,9 @@ class RPCstub {
 		return $this->rpc->pack("stub ".$this->num." $name ".$this->rpc->wantarray, $param)->ret();
 	}
 
-	function __callStatic($name, $param) {
+	/*static function __callStatic($name, $param) {
 		return $this->rpc->pack("stub ".$this->num." $name ".$this->rpc->wantarray, $param)->ret();
-	}
+	}*/
 	
 	function __get($key) {
 		return $this->rpc->pack("get ".$this->num, array($key))->ret();

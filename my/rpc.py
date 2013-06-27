@@ -3,14 +3,15 @@
 
 
 import os, sys, shlex, json
+from collections import Iterator
 
 class RPC:
 
 	PROG = {
-		"perl": "perl -I'%s' -e 'require rpc; rpc.new'",
+		"perl": "perl -I'%s' -e 'require rpc; rpc->new'",
 		"php": "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
-		"python": "",
-		"ruby": ""
+		"python": "python -c 'import sys; sys.path.append(\"%s\"); from rpc import RPC; RPC()'",
+		"ruby": "ruby -I'%s' -e 'require \"rpc.rb\"; RPC.new'"
 	}
 
 	# конструктор. Создаёт соединение
@@ -19,7 +20,7 @@ class RPC:
 		self.prog = prog
 		self.objects = {}
 		self.warn = 0
-		self.erase = []
+		self._erase = []
 		self.wantarray = 1
 	
 		if prog is None: return self.minor()
@@ -32,7 +33,7 @@ class RPC:
 		
 		if pid==0:
 			prog = PROG.get(prog, prog)
-			prog = prog % (os.path.dirname(__file__) + "/../my")
+			prog = prog % (os.path.dirname(RPC.__module__.__file__))
 			if ch_reader != 4: os.dup2(ch_reader, 4)
 			if ch_writer != 5: os.dup2(ch_writer, 5)
 			args = shlex.split(prog)
@@ -45,13 +46,13 @@ class RPC:
 		self.role = "MAJOR"
 
 	# закрывает соединение
-	def close():
+	def close(self):
 		self.w.write("ok\nnull\n")
 		self.r.close()
 		self.w.close()
 
 	# создаёт подчинённого
-	def minor():
+	def minor(self):
 		
 		self.r = os.fdopen(4, "rb")
 		self.w = os.fdopen(5, "wb")
@@ -65,7 +66,7 @@ class RPC:
 		return ret
 
 	# превращает в json и сразу отправляет. Объекты складирует в self.objects
-	def pack(cmd, data):
+	def pack(self, cmd, data):
 		pipe = self.w
 		
 		ret = [data]
@@ -82,23 +83,22 @@ class RPC:
 					self.objects[idx] = val
 				elif isinstance(val, (dict, list)):
 					st.append(val)
-				elif isinstance(val, tuple):
+				elif isinstance(val, (tuple, Iterator)):
 					ls[i] = val = list(val)
 					st.append(val)
 		
 		data = ret[0]
 		
-		json = json.dumps(data)
-		erase = self.erase.join(",")
+		erase = ",".join(self._erase)
 		
-		if self.warn: sys.stderr.write("%s . `%s` %s %s\n" % (self.role, cmd, json, erase))
+		if self.warn: sys.stderr.write("%s -> `%s` %s %s\n" % (self.role, cmd, json.dumps(data), erase))
 		
-		pipe.write("cmd\n")
-		pipe.write(json)
+		pipe.write("%s\n" % cmd)
+		json.dump(data, pipe)
 		pipe.write("\n")
-		pipe.write(implode("\n", self.erase)."\n")
+		pipe.write(erase+"\n")
 		pipe.flush()
-		self.erase = []
+		self._erase = []
 		return self
 
 	# распаковывает
@@ -112,12 +112,15 @@ class RPC:
 		while st:
 			ls = st.pop()
 			for i, val in (enumerate(ls) if isinstance(ls, list) else ls.iteritems()):
-				if self.stub in val:
-					ls[i] = self.stub(val[self.stub])
-				elif self.bless in val: 
-					ls[i] = self.objects[val[self.bless]]
-				elif isinstance(val, (dict, list)):
+				if isinstance(val, list):
 					st.append(val)
+				elif isinstance(val, dict):
+					if self.stub in val:
+						ls[i] = self.stub(val[self.stub])
+					elif self.bless in val:
+						ls[i] = self.objects[val[self.bless]]
+					else:
+						st.append(val)
 		
 		data = ret[0]
 		
@@ -126,42 +129,39 @@ class RPC:
 	# вызывает функцию
 	def call(self, name, *av):
 		return self.pack("call %s %i" % (name, self.wantarray), av).ret()
-	}
 
 	# вызывает метод
 	def apply(self, cls, name, *av):
 		return self.pack("apply %s %s %i" % (cls, name, self.wantarray), av).ret()
-	}
 
 	# выполняет код eval eval, args...
 	def eval(self, *av):
 		return self.pack("eval %i" % self.wantarray, av).ret()
-	}
 
 	# устанавливает warn на миноре
 	def warn(self, val):
-		self.warn = val+=0
+		val += 0
+		self.warn = val
 		return self.pack("warn", val).ret()
-	}
 
 	# удаляет ссылки на объекты из objects
 	def erase(self, nums):
-		foreach(nums as num) unset(self.objects[num])
-	}
+			for num in nums: del self.objects[num]
 	
 	# получает и возвращает данные и устанавливает ссылочные параметры
-	def ret():
+	def ret(self):
 		pipe = self.r
 		
 		while 1:	# клиент послал запрос
-			if pipe.eof():
+			try:
+				ret = pipe.readline()[:-1]
+				arg = pipe.readline()[:-1]
+				nums = pipe.readline()[:-1]
+			except EOFError as e:
 				if self.warn: sys.stderr.write("%s closed\n" % self.role)
 				return		# закрыт
 
-			ret = pipe.readline()[:-1]
-			arg = pipe.readline()[:-1]
-			nums = pipe.readline()[:-1]
-			argnums = nums.split(",")
+			argnums = [i for i in nums.split(",") if i!='']
 			args = self.unpack(arg)
 
 			if self.warn: sys.stderr.write("%s <- `%s` %s %s\n" % (self.role, ret, arg, nums));
@@ -174,7 +174,7 @@ class RPC:
 				raise RPCException(args)
 			
 			try:
-				arg = ret.split(",")
+				arg = ret.split(" ")
 				cmd = arg[0]
 				if cmd == "stub":
 					ret = getattr(self.objects[arg[1]], arg[2])(*args)
@@ -195,18 +195,19 @@ class RPC:
 					ret = globals()[arg[1]](*args)
 					self.pack("ok", ret)
 				elif cmd == "eval":
-					ret = eval(args[0])
+					evl = args[0]
+					args = args[1:]
+					ret = eval(evl)
 					self.pack("ok", ret)
 				else:
-					raise RPCException("Неизвестная команда `cmd`");
+					raise RPCException("Неизвестная команда `%s`" % cmd);
 
-			except Exception as e:
-				self.pack("error", "%s %s" % (e.__name__, e.message))
+			except BaseException as e:
+				self.pack("error", "%s %s" % (e.__class__.__name__, e))
 			
 			self.erase(argnums)
 
-		return args;
-	}
+		return args
 
 	# создаёт заглушку, для удалённого объекта
 	def stub(num):
@@ -218,11 +219,11 @@ class RPC:
 # заглушка
 class RPCstub:
 	
-	def __getattr__(self, *param, **kv):
-		return self.rpc.pack("stub %s %s %i" % (self.num, name, self.rpc.wantarray), param).ret()
+	def __getattr__(self, name):
+		return self.rpc.pack("get %i" % self.num, [name]).ret()
 		
-	def __setattr__(self, *param, **kv):
-		return self.rpc.pack("stub %s %s %i" % (self.num, name, self.rpc.wantarray), param).ret()
+	def __setattr__(self, name, val):
+		return self.rpc.pack("set %i" % self.num, [name, param]).ret()
 	
 	def __get__(self, key):
 		raise RPCException("__get__(%s) not implemented" % key)
@@ -231,7 +232,12 @@ class RPCstub:
 		raise RPCException("__delattr__(%s) not implemented" % name)
 		
 	def __del__(self):
-		self.rpc.erase.append(self.num)
+		self.rpc._erase.append(self.num)
 
 class RPCException(Exception):
-	pass
+	def __init__(self, value):
+		self.value = value
+	
+	def __str__(self):
+		print ":", self.value
+		return self.value

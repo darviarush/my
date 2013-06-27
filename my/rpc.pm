@@ -10,8 +10,8 @@ use utils;
 %prog = (
 "perl" => "perl -I'%s' -e 'require rpc; rpc->new'",
 "php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
-"python" => "",
-"ruby" => ""
+"python" => "python -c 'import sys; sys.path.append(\"%s\"); from rpc import RPC; RPC()'",
+"ruby" => "ruby -I'%s' -e 'require \"rpc.rb\"; RPC.new'"
 );
 
 

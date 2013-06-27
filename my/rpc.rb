@@ -1,265 +1,263 @@
+#!/usr/bin/env ruby
+# encoding: UTF-8
+
+# gem install json
+require 'json'
+
+include ObjectSpace
+
 class RPC
 
-	static PROG = array(
+	@@PROG = Hash[
 		"perl" => "perl -I'%s' -e 'require rpc; rpc->new'",
 		"php" => "php -r 'require_once \"%s/rpc.php\"; new rpc();'",
-		"python" => "",
-		"ruby" => ""
-	);
-
-	public r, w, objects, prog, bless, stub, role, process, wantarray = 1, erase = array(), warn = 0;
-
-
+		"python" => "python -c 'import sys; sys.path.append(\"%s\"); from rpc import RPC; RPC()'",
+		"ruby" => "ruby -I'%s' -e 'require \"rpc.rb\"; RPC.new'"
+	]
 
 	# конструктор. Создаёт соединение
-	def __construct(prog = null)
-	
-		if(prog === null) return self->minor();
+	def initialize(prog = nil)
 		
-		 = IO::pipe()
-		pipe $ch_reader, $writer or die "not create pipe. $!";
-		pipe $reader, $ch_writer or die "not create pipe. $!";;
-		
-		binmode $reader; binmode $writer; binmode $ch_reader; binmode $ch_writer;
-
-		my $stdout = select $in; $| = 1;
-		select $writer; $| = 1;
-		select $ch_writer; $| = 1;
-		select $stdout;
-		
-		my $pid = fork;
-		
-		die "fork. $!" if $pid < 0;
-		
-		if !pid
-			$prog = $prog{$prog};
-			$prog = sprintf $prog, $INC{'rpc.pm'} =~ /\/rpc.pm$/ && $` if defined $prog;
-			my $ch4 = fileno $ch_reader;
-			my $ch5 = fileno $ch_writer;
-			POSIX::dup2($ch4, 4) if $ch4 != 4;
-			POSIX::dup2($ch5, 5) if $ch5 != 5;
-			exec $prog or die "Ошибка создания подчинённого. $!";
+		@finalizer = proc do |id|
+			self.erase.push id
 		end
 		
-		self->process = process;
-		self->r = pipe[5];
-		self->w = pipe[4];
-		self->prog = prog;
-		self->bless = "\0bless\0";
-		self->stub = "\0stub\0";
-		self->role = "MAJOR";
+		@prog = prog
+		@objects = Hash.new
+		@warn = 0
+		@erase = []
+		@wantarray = 1
+	
+		if prog.equal?(nil)
+			return self.minor
+		end
+		
+		ch_reader, writer = IO.pipe
+		reader, ch_writer = IO.pipe
+		
+		pid = fork do
+			prog = @@PROG[prog]
+			#$LOAD_PATH
+			prog = prog % $LOADED_FEATURES.select { |x| /\/rpc\.pm$/ =~ x }.last if prog
+			ch_reader.dup2(4) if ch_reader.fileno != 4
+			ch_writer.dup2(5) if ch_writer.fileno != 5
+			exec prog
+		end
+
+		@r = reader
+		@w = writer
+		@bless = "\0bless\0"
+		@stub = "\0stub\0"
+		@role = "MAJOR"
 	end
 
 	# закрывает соединение
-	def close() {
-		fwrite(self->w, "ok\nnull\n");
-		fclose(self->r);
-		fclose(self->w);
-		proc_close(self->process);
+	def close
+		@w.puts "ok\nnull\n"
+		@r.close
+		@w.close
 	end
 
 	# создаёт подчинённого
-	def minor() {
+	def minor
 	
-		r = fopen("php://fd/4", "rb");
-		if(!r) throw new RPCException("NOT DUP IN");
-		w = fopen("php://fd/5", "wb");
-		if(!w) throw new RPCException("NOT DUP OUT");
-		
-		self->r = r;
-		self->w = w;
-		self->prog = prog;
-		self->bless = "\0stub\0";
-		self->stub = "\0bless\0";
-		self->role = "MINOR";
+		@r = IO.new(4, "rb")
+		@w = IO.new(5, "wb")
 
-		ret = self->ret();
+		@bless = "\0stub\0"
+		@stub = "\0bless\0"
+		@role = "MINOR"
+
+		ret = self.ret
 		
-		if(self->warn) fprintf(STDERR, "MINOR ENDED %s\n", ret);
-		return ret;
+		$stderr.puts "MINOR ENDED #{ret}\n"
+		@object = []
+		return ret
 	end
 
 	# превращает в json и сразу отправляет. Объекты складирует в self->objects
-	def pack(cmd, data) {
-		pipe = self->w;
+	def pack(cmd, data)
+		pipe = @w
 		
-		fn = def(&val, key) {
-			if(val instanceof RPCstub) val = array(self->stub => val->num);
-			else if(is_object(val)) {
-				self->objects[] = val;
-				val = array(self->bless => count(self->objects)-1);
+		ret = [data]
+		st = [ret]
+		
+		while st
+			ls = st.pop
+			for i, val in if ls.instance_of? Array then (0..ls.length - 1).to_a.zip(ls) else ls end
+				if val.instance_of? RPCstub
+					ls[i] = {@stub => val.num}
+				elsif [Hash, Array].include? val.class
+					st.push val
+				elsif not( [TrueClass, FalseClass, NilClass].include? val.class or val.is_a? Enumerable )
+					idx = @objects.length
+					ls[i] = {@bless => idx}
+					@objects[idx] = val
+				end
 			end
-		end;
+		end
 		
-		if(is_array(data)) array_walk_recursive(data, fn);
-		else fn(data, 0);
+		data = ret[0]
 		
-		json = json_encode(data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
+		$stderr.puts "#{@role} -> #{cmd} #{JSON.dump(data)} #{@erase.to_s}\n" if @warn
 		
-		if(self->warn) fprintf(STDERR, "%s -> `%s` %s %s\n", self->role, cmd, json, implode(",", self->erase));
-		
-		fwrite(pipe, "cmd\n");
-		fwrite(pipe, json);
-		fwrite(pipe, "\n");
-		fwrite(pipe, implode("\n", self->erase)."\n");
-		flush(pipe);
-		self->erase = array();
-		return self;
+		pipe.puts "#{cmd}\n"
+		JSON.dump(data, pipe)
+		pipe.puts "\n#{@erase.join("\n")}\n"
+		pipe.flush
+		@erase = []
+		return self
 	end
 
 	# распаковывает
-	def unpack(data) {
+	def unpack(data)
 
-		data = json_decode(data, true);
+		data = JSON.load(data)
 		
-		if(!is_array(data)) return data;
+		ret = [data]
+		st = [ret]
 		
-		st = array(&data);
-
-		for(i=0; st; i++) {
-			val = &st[i];
-			
-			if(isset(val[self->stub])) val = self->stub(val[self->stub]);
-			elseif(isset(val[self->bless])) val = self->objects[val[self->bless]];
-			else foreach(val as &x) if(is_array(x)) st []= &x;
-			
-			unset(st[i]);
+		while st
+			ls = st.pop()
+			for i, val in if ls.instance_of? Array then (0..ls.length - 1).to_a.zip(ls) else ls end
+				if val[@stub] != nil
+					ls[i] = self.stub(val[@stub])
+				elsif val[@bless] != nil 
+					ls[i] = @objects[val[@bless]]
+				elsif [Hash, Array].include? val
+					st.push val
+				end
+			end
 		end
-		#if(self->warn) fprintf(STDERR, "%s data=%s", self->role, print_r(data, true));
-		return data;
+		
+		data = ret[0]
+
+		return data
 	end
 
 	# вызывает функцию
-	def call(name) {
-		args = func_get_args(); array_shift(args);
-		return self->pack("call name ".self->wantarray, args)->ret();
+	def call(name, *args)
+		self.pack("call #{name} #{@wantarray}", args).ret
 	end
 
 	# вызывает метод
-	def apply(class, name) {
-		args = func_get_args(); array_shift(args); array_shift(args);
-		return self->pack("apply class name ".self->wantarray, args)->ret();
+	def apply(cls, name, *args)
+		self.pack("apply #{cls} #{name} #{@wantarray}", args).ret
 	end
 
 	# выполняет код eval eval, args...
-	def _eval() {
-		return self->pack("eval ".self->wantarray, func_get_args())->ret();
+	def eval(eval, *args)
+		args.unshift eval
+		self.pack("eval #{@wantarray}", args).ret
 	end
 
 	# устанавливает warn на миноре
-	def warn(val) {
-		self->warn = val+=0;
-		return self->pack("warn", val)->ret();
+	def warn(val)
+		val = val.to_i
+		@warn = val
+		self.pack("warn", val).ret
 	end
 
 	# удаляет ссылки на объекты из objects
-	def erase(nums) {
-		foreach(nums as num) unset(self->objects[num]);
+	def erase(nums)
+		for num in nums
+			@objects.delete num.to_i
+		end
 	end
 	
 	# получает и возвращает данные и устанавливает ссылочные параметры
-	def ret() {
-		pipe = self->r;
+	def ret
+		pipe = @r
 		
-		for(;;) {	# клиент послал запрос
-			if(feof(pipe)) {
-				if(self->warn) fprintf(STDERR, "%s closed: %s\n", self->role, implode("\n", debug_backtrace()));
-				return;	# закрыт
+		while 1	# клиент послал запрос
+			if pipe.eof?
+				if @warn
+					$stderr.puts "#{@role} closed: #{caller.join("\n")}\n"
+				end
+				return	# закрыт
 			end
-			ret = rtrim(fgets(pipe));
-			arg = rtrim(fgets(pipe));
-			nums = rtrim(fgets(pipe));
-			argnums = explode(",", nums);
-			args = self->unpack(arg);
+			ret = pipe.readline.rtrim
+			arg = pipe.readline.rtrim
+			nums = pipe.readline.rtrim
+			argnums = nums.split(",")
+			args = self.unpack(arg)
 
 			
-			if(self->warn) fprintf(STDERR, "%s <- `%s` %s %s\n", self->role, ret, arg, nums);
+			if @warn
+				$stderr.puts "#{@role} <- `#{ret}` #{arg} #{nums}\n"
+			end
 			
-			if(ret == "ok") { self->erase(argnums); break; }
-			if(ret == "error") { self->erase(argnums); throw new RPCException(args); }
+			if ret == "ok" 
+				self.erase(argnums)
+			elsif ret == "error"
+				self.erase(argnums)
+				raise RPCException, args, caller
+			end
 			
-			try {
+			begin
 			
-				arg = explode(" ", ret);
-				cmd = arg[0];
-				if(cmd == "stub") {
-					ret = self.objects[arg[1]].send(arg[2], *args); 
-					self->pack("ok", ret);
-				end
-				else if(cmd == "get") {
+				arg = ret.split(" ")
+				cmd = arg[0]
+				if cmd == "stub"
+					ret = @objects[arg[1]].send(arg[2], *args); 
+					self.pack("ok", ret)
+=begin
+				elsif cmd == "get"
 					prop = args[0];
 					ret = self->objects[arg[1]]->prop; 
-					self->pack("ok", ret);
-				end
-				else if(cmd == "set") {
+					self.pack("ok", ret)
+				elsif cmd == "set"
 					prop = args[0];
 					self->objects[arg[1]]->prop = args[1];
 					self->pack("ok", 1);
+=end
+				elsif cmd == "warn"
+					@warn = args
+					self.pack("ok", 1)
+				elsif cmd == "apply"
+					ret = arg[1].send arg[2], *args
+					self.pack("ok", ret)
+				elsif cmd == "call"
+					ret = Kernel.send arg[1], *args
+					self.pack("ok", ret)
+				elsif cmd == "eval"
+					buf = args.shift
+					ret = eval(buf)
+					self.pack("ok", ret)
+				else
+					raise RPCException, "Неизвестная команда `cmd`", caller
 				end
-				else if(cmd == "warn") {
-					self->warn = args;
-					self->pack("ok", 1);
-				end
-				elseif(cmd == "apply") {
-					ret = call_user_func_array(array(arg[1], arg[2]), args); 
-					self->pack("ok", ret);
-				end
-				elseif(cmd == "call") {
-					ret = call_user_func_array(arg[1], args); 
-					self->pack("ok", ret);
-				end
-				elseif(cmd == "eval") {
-					buf = array_shift(args);
-					ret = eval(buf);
-					if ( ret === false && ( error = error_get_last() ) )
-						throw new RPCException("Ошибка в eval: ".error['type']." ".error['message']." at ".error['file'].":".error['line']);
-
-					self->pack("ok", ret);
-				end
-				else {
-					throw new RPCException("Неизвестная команда `cmd`");
-				end
-			end catch(Exception e) {
-				self->pack("error", e->getMessage());
+			rescue SyntaxError, NameError, StandardError => e
+				self.pack("error", e.to_s)
 			end
-			self->erase(argnums);
+			self.erase(argnums)
 		end
 
-		return args;
+		return args
 	end
 
 	# создаёт заглушку, для удалённого объекта
-	def stub(num) {
-		stub = new RPCStub();
-		stub->num = num;
-		stub->rpc = self;
-		return stub;
+	def stub(num)
+		stub = RPCStub.new(self, num)
+		define_finalizer(stub, @finalizer)
+		return stub
 	end
+	
 end
 
 # заглушка
-class RPCstub {
-	public num, rpc;
+class RPCstub
 	
-	def __call(name, param) {
-		return self->rpc->pack("stub ".self->num." name ".self->rpc->wantarray, param)->ret();
-	end
-
-	def __callStatic(name, param) {
-		return self->rpc->pack("stub ".self->num." name ".self->rpc->wantarray, param)->ret();
+	def initialize(rpc, num)
+		@rpc = rpc
+		@num = num
 	end
 	
-	def __get(key) {
-		return self->rpc->pack("get ".self->num, array(key))->ret();
+	def method_missing(name, *param)
+		self.rpc.pack("stub #{@num} #{name} #{@rpc.wantarray}", param).ret
 	end
 	
-	def __set(key, val) {
-		self->rpc->pack("set ".self->num, array(key, val))->ret();
-	end
-	
-	def __destruct() {
-		self->rpc->erase[] = self->num;
-	end
 end
 
-class RPCException extends Exception {}
+class RPCException < RuntimeError
+end
