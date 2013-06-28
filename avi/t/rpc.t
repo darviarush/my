@@ -125,11 +125,10 @@ $rpc->close;
 
 
 $rpc = rpc->new('python');
-$rpc->warn(1);
+#$rpc->warn(1);
 
 
 @ret = $rpc->eval("reversed(args)", 1,[2,4],{"f"=>"p"},3);
-print Dumper(\@ret);
 is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
 
 @ret = $rpc->call("reversed", [1,[2,4],{"f"=>"p"},3]);
