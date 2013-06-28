@@ -5,6 +5,8 @@
 import os, sys, shlex, json
 from collections import Iterator
 
+from pprint import pprint
+
 class RPC:
 
 	PROG = {
@@ -42,7 +44,7 @@ class RPC:
 		self.r = os.fdopen(reader, "rb")
 		self.w = os.fdopen(writer, "wb")
 		self.bless = "\0bless\0"
-		self.stub = "\0stub\0"
+		self._stub = "\0stub\0"
 		self.role = "MAJOR"
 
 	# закрывает соединение
@@ -57,7 +59,7 @@ class RPC:
 		self.r = os.fdopen(4, "rb")
 		self.w = os.fdopen(5, "wb")
 		self.bless = "\0stub\0"
-		self.stub = "\0bless\0"
+		self._stub = "\0bless\0"
 		self.role = "MINOR"
 
 		ret = self.ret()
@@ -75,8 +77,8 @@ class RPC:
 		while st:
 			ls = st.pop()
 			for i, val in (enumerate(ls) if isinstance(ls, list) else ls.iteritems()):
-				if isinstance(val, RPCstub):
-					ls[i] = {self.stub: val.num}
+				if isinstance(val, Stub):
+					ls[i] = {self._stub: val.num}
 				elif type(val) in ('instance', 'classobj'):
 					idx = len(self.objects)
 					ls[i] = {self.bless: idx}
@@ -115,8 +117,8 @@ class RPC:
 				if isinstance(val, list):
 					st.append(val)
 				elif isinstance(val, dict):
-					if self.stub in val:
-						ls[i] = self.stub(val[self.stub])
+					if self._stub in val:
+						ls[i] = self.stub(val[self._stub])
 					elif self.bless in val:
 						ls[i] = self.objects[val[self.bless]]
 					else:
@@ -192,7 +194,7 @@ class RPC:
 					ret = getattr(globals()[arg[1]], arg[2])(*args)
 					self.pack("ok", ret)
 				elif cmd == "call":
-					ret = globals()[arg[1]](*args)
+					ret = eval(arg[1]+'(*args)')
 					self.pack("ok", ret)
 				elif cmd == "eval":
 					evl = args[0]
@@ -210,14 +212,14 @@ class RPC:
 		return args
 
 	# создаёт заглушку, для удалённого объекта
-	def stub(num):
-		stub = RPCStub()
+	def stub(self, num):
+		stub = Stub()
 		stub.num = num
 		stub.rpc = self
 		return stub
 
 # заглушка
-class RPCstub:
+class Stub:
 	
 	def __getattr__(self, name):
 		return self.rpc.pack("get %i" % self.num, [name]).ret()

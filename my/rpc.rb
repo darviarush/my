@@ -201,16 +201,14 @@ class RPC
 				if cmd == "stub"
 					ret = @objects[arg[1]].send(arg[2], *args); 
 					self.pack("ok", ret)
-=begin
 				elsif cmd == "get"
 					prop = args[0];
-					ret = self->objects[arg[1]]->prop; 
+					ret = @objects[arg[1]].send prop
 					self.pack("ok", ret)
 				elsif cmd == "set"
-					prop = args[0];
-					self->objects[arg[1]]->prop = args[1];
-					self->pack("ok", 1);
-=end
+					prop = args[0]
+					@objects[arg[1]].send prop, args[1]
+					self.pack("ok", 1)
 				elsif cmd == "warn"
 					@warn = args
 					self.pack("ok", 1)
