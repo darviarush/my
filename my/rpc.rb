@@ -82,7 +82,7 @@ class RPC
 		ret = [data]
 		st = [ret]
 		
-		while st
+		until st.length==0
 			ls = st.pop
 			for i, val in if ls.instance_of? Array then (0..ls.length - 1).to_a.zip(ls) else ls end
 				if val.instance_of? RPCstub
@@ -99,7 +99,7 @@ class RPC
 		
 		data = ret[0]
 		
-		$stderr.puts "#{@role} -> #{cmd} #{JSON.dump(data)} #{@erase.to_s}\n" if @warn
+		$stderr.puts "#{@role} -> #{cmd} #{JSON.dump(data)} #{@erase.to_s}\n" if @warn == 1
 		
 		pipe.puts "#{cmd}\n"
 		JSON.dump(data, pipe)
@@ -117,15 +117,22 @@ class RPC
 		ret = [data]
 		st = [ret]
 		
-		while st
-			ls = st.pop()
-			for i, val in if ls.instance_of? Array then (0..ls.length - 1).to_a.zip(ls) else ls end
-				if val[@stub] != nil
-					ls[i] = self.stub(val[@stub])
-				elsif val[@bless] != nil 
-					ls[i] = @objects[val[@bless]]
-				elsif [Hash, Array].include? val
-					st.push val
+		until st.length == 0
+			ls = st.pop
+
+			if ls.instance_of? Hash
+				for i, val in ls
+					if val[@stub] != nil
+						ls[i] = self.stub(val[@stub])
+					elsif val[@bless] != nil 
+						ls[i] = @objects[val[@bless]]
+					elsif [Hash, Array].include? val
+						st.push val
+					end
+				end
+			else
+				for i, val in (0..ls.length - 1).to_a.zip(ls)
+					st.push val if [Hash, Array].include? val
 				end
 			end
 		end
@@ -169,21 +176,21 @@ class RPC
 	def ret
 		pipe = @r
 		
-		while 1	# клиент послал запрос
+		while true	# клиент послал запрос
 			if pipe.eof?
-				if @warn
+				if @warn == 1
 					$stderr.puts "#{@role} closed: #{caller.join("\n")}\n"
 				end
 				return	# закрыт
 			end
-			ret = pipe.readline.rtrim
-			arg = pipe.readline.rtrim
-			nums = pipe.readline.rtrim
+			ret = pipe.readline.rstrip
+			arg = pipe.readline.rstrip
+			nums = pipe.readline.rstrip
 			argnums = nums.split(",")
 			args = self.unpack(arg)
 
 			
-			if @warn
+			if @warn == 1
 				$stderr.puts "#{@role} <- `#{ret}` #{arg} #{nums}\n"
 			end
 			
@@ -254,6 +261,15 @@ class RPCstub
 	def method_missing(name, *param)
 		self.rpc.pack("stub #{@num} #{name} #{@rpc.wantarray}", param).ret
 	end
+	
+	def [](key)
+		self.rpc.pack("get #{@num}", [key]).ret
+	end
+	
+	def [](key, val)
+		self.rpc.pack("set #{@num}", [key, val]).ret
+	end
+
 	
 end
 

@@ -15,12 +15,13 @@ use utils;
 );
 
 
-
 # конструктор. Создаёт соединение
 sub new {
 	my ($cls, $prog) = @_;
 	
 	goto &minor unless defined $prog;
+	
+	 if $prog == -1;
 	
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
@@ -74,10 +75,7 @@ sub minor {
 
 	
 	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "MINOR"}, $cls;
-	#open STDIN, "/dev/null";
-	#open STDOUT, "< /dev/null";
 	my @ret = $self->ret;
-	#bless($_, 'HASH') for values %{$self->{objects}};
 	warn "MINOR ENDED @ret" if $self->{warn};
 	return @ret;
 }
@@ -101,8 +99,13 @@ sub json_quote {
 	return $val;
 }
 
-# превращает в json и сразу отправляет. Объекты складирует в $self->{objects}
+
+# превращает в бинарный формат и сразу отправляет, если указан
 sub pack {
+}
+
+# превращает в json и сразу отправляет. Объекты складирует в $self->{objects}
+sub pack1 {
 	my ($self, $cmd, $data) = @_;
 	local ($,, $\) = ();
 	my $pipe = $self->{w};
@@ -135,7 +138,7 @@ sub pack {
 }
 
 # распаковывает
-sub unpack {
+sub unpack1 {
 	my ($self, $data) = @_;
 
 	$data = utils::from_json($data);
@@ -189,6 +192,7 @@ sub warn {
 # удаляет ссылки на объекты из objects
 sub erase {
 	my ($self, $nums) = @_;
+	local $_;
 	my $objects = $self->{objects};
 	delete $objects->{$_} for @$nums;
 }

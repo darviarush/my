@@ -1,4 +1,4 @@
-use Test::More tests => 29;
+use Test::More tests => 17;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;
@@ -10,11 +10,29 @@ use lib '../lib';
 use_ok "rpc";
 use_ok "utils";
 
+$rpc = rpc->new(-1);
+
+$obj1 = bless {}, "test_class1";
+$obj2 = bless {}, "test_class2";
+
+$data_x = [1,3, $obj1, 4];
+$data = {"f": [0, [$data_x], 33, {"data_x" => $data_x, "obj2" => $obj2}, "pp" => 33], "g": "h1"};
+
+$pack = $rpc->pack($data);
+
+is(%{$rpc->{object}}+0, 2);
+
+$a = $rpc->unpack($pack);
+
+is_deeply($a, $data);
+$dx2 = $a->{"f"}->[1][0];
+is($dx2, $a->{"f"}->[3]->{"data_x"});
+is($dx2->[2], $obj1);
+is($a->{"f"}->[3]->{"obj2"}, $obj2);
+
+=pod
+
 $rpc = rpc->new("perl");
-
-
-$a = $rpc->unpack('{"f":["x",1]}');
-is_deeply($a, {"f"=>["x",1]});
 
 @A = $rpc->eval('reverse(@$args)', 1,[2,4],{"f"=>"p"},3);
 is_deeply(\@A, [3,{"f"=>"p"},[2,4],1]);
@@ -76,98 +94,4 @@ is($ret, 10);
 
 $rpc->close;
 
-
-
-
-$rpc = rpc->new('php');
-
-@ret = $rpc->eval("return array_reverse(\$args);", 1,[2,4],{"f"=>"p"},3);
-is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
-
-@ret = $rpc->call("array_reverse", [1,[2,4],{"f"=>"p"},3]);
-is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
-
-eval { $rpc->eval("throw new Exception('test exception');") };
-like($@, qr/test exception/);
-
-sub myclass::ex { $_[1]+$_[2]+$_[0]->{x10} }
-$myobj = bless {}, "myclass";
-
-$ret = $rpc->eval("return \$args[0]->x10 = 10;", $myobj);
-is($ret, 10);
-is($myobj->{'x10'}, 10);
-
-$ret = $rpc->eval("return \$args[0]->x10;", $myobj);
-is($ret, 10);
-
-$ret = $rpc->eval("return \$args[0]->ex(\$args[1], \$args[2]);", $myobj, 20, 30);
-is_deeply($ret, [60]);
-
-($ret) = $rpc->eval("return \$args[0]->ex(\$args[1], \$args[2]);", $myobj, 20, 30);
-is($ret, 60);
-
-
-$stub = $rpc->eval('class A { public $c; function ex($a, $b=0) { return $a+$b+$this->c; } } return new A();');
-isa_ok($stub, "rpc::stub");
-
-$stub->{'c'} = 30;
-is($stub->{'c'}, 30);
-
-$ret = $stub->ex(10);
-is($ret, 40);
-
-$ret = $stub->ex(10, 20);
-is($ret, 60);
-
-
-$rpc->close;
-
-
-
-$rpc = rpc->new('python');
-#$rpc->warn(1);
-
-
-@ret = $rpc->eval("reversed(args)", 1,[2,4],{"f"=>"p"},3);
-is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
-
-@ret = $rpc->call("reversed", [1,[2,4],{"f"=>"p"},3]);
-is_deeply(\@ret, [3,{"f"=>"p"},[2,4],1]);
-
-eval { $rpc->eval("raise Exception('test exception')") };
-like($@, qr/test exception/);
-
-$myobj = bless {}, "myclass";
-
-$ret = $rpc->eval("args[0].x10 = 10", $myobj);
-is($ret, 10);
-is($myobj->{'x10'}, 10);
-
-$ret = $rpc->eval("args[0].x10", $myobj);
-is($ret, 10);
-
-$ret = $rpc->eval("args[0].ex(args[1], args[2])", $myobj, 20, 30);
-is_deeply($ret, [60]);
-
-($ret) = $rpc->eval("args[0].ex(args[1], args[2])", $myobj, 20, 30);
-is($ret, 60);
-
-$stub = $rpc->eval("
-class A: 
-	def ex($a, $b=0):
-		return $a+$b+$this->c
-return A()
-");
-isa_ok($stub, "rpc::stub");
-
-$stub->{'c'} = 30;
-is($stub->{'c'}, 30);
-
-$ret = $stub->ex(10);
-is($ret, 40);
-
-$ret = $stub->ex(10, 20);
-is($ret, 60);
-
-
-$rpc->close;
+=cut

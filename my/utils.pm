@@ -21,7 +21,11 @@ sub new {
 	bless \(my $state = $value), $class;
 }
 
+
+
 package utils;
+
+# пакет с утилитами
 
 use Data::Dumper;
 

@@ -214,24 +214,45 @@ class RPC:
 	# создаёт заглушку, для удалённого объекта
 	def stub(self, num):
 		stub = Stub()
-		stub.num = num
-		stub.rpc = self
+		stub.__dict__['rpc.num'] = self, num
 		return stub
 
+# заглушка для значения
+class StubVal:
+	
+	def __init__(self, key):
+		self.__dict__['rpc.num.key'] = key
+	
+	def __call__(self, *av):
+		rpc, num = self.__dict__['rpc.num']
+		return rpc.pack("stub %s %s %i" % (num, key, rpc.wantarray), av).ret()
+
+	def __len__(self):
+		
+		
+	def __lt__(self, other):
+			pass
+	def __le__(self, other):
+			pass
+	def __eq__(self, other):
+			pass
+	def __ne__(self, other):
+			pass
+	def __gt__(self, other):
+			pass
+	def __ge__(self, other):
+			pass
+
+	
+	
 # заглушка
 class Stub:
-	
+		
 	def __getattr__(self, name):
 		return self.rpc.pack("get %i" % self.num, [name]).ret()
 		
 	def __setattr__(self, name, val):
 		return self.rpc.pack("set %i" % self.num, [name, param]).ret()
-	
-	def __get__(self, key):
-		raise RPCException("__get__(%s) not implemented" % key)
-	
-	def __delattr__(self, name):
-		raise RPCException("__delattr__(%s) not implemented" % name)
 		
 	def __del__(self):
 		self.rpc._erase.append(self.num)

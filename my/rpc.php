@@ -22,9 +22,9 @@ class RPC {
 			4 => array("pipe", "rb"),	// это канал, из которого потомок будет читать
 			5 => array("pipe", "wb"),	// это канал, в который потомок будет записывать
 		);
-		
+				
 		$real_prog = isset(self::$PROG[$prog])? self::$PROG[$prog]: $prog;
-		$real_prog = sprintf($real_prog, dirname(__FILE__)."/../my");
+		$real_prog = sprintf($real_prog, dirname(__FILE__));
 		
 		$process = proc_open($real_prog, $descriptorspec, $pipe);
 		if(!is_resource($process)) throw new RPCException("RPC not started"); 
