@@ -1,10 +1,13 @@
 # заглушка
 package rpc;
 
+use B qw/svref_2object class/;
+use Encode qw/_utf8_off is_utf8/;
 use POSIX qw//;
 use Data::Dumper;
 
 use utils;
+
 
 
 %prog = (
@@ -21,7 +24,7 @@ sub new {
 	
 	goto &minor unless defined $prog;
 	
-	bless {prog => -1, objects => {}, role => "TEST"}, $cls if $prog == -1;
+	bless {r=>$_[2], w=>$_[3], prog => -1, objects => {}, role => "TEST"}, $cls if $prog == -1;
 	
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
@@ -80,6 +83,85 @@ sub minor {
 	return @ret;
 }
 
+
+
+# превращает в бинарный формат и сразу отправляет
+sub pack {
+	my ($self, $data) = @_;
+	local ($_, $,, $\) = ();
+	my %is = ();
+	my $svref;
+	my $pipe = $self->{w};
+	
+	my $ret = [$data];
+	my @st = ($ret, 0);
+
+	my $len = 1;
+	
+	while(@st) {
+		my $arr = pop @st;
+		my $hash = ref $arr eq "HASH";
+
+		while(my($key, $val) = $hash? each %$arr: each @$arr) {
+	
+			if(ref $val eq "HASH") {
+				print $pipe "H", pack "N", 0+%$arr;
+				push @st, $arr;
+				$hash = 1;
+				$arr = $val;
+				next;
+			} elsif(ref $arr eq "ARRAY") {
+				print $pipe "A", pack "N", 0+@$arr;
+				push @st, $arr;
+				$hash = 0;
+				$arr = $val;
+				next;
+			}
+			elsif(ref $val eq "rpc::stub") {
+				my $stub = tied %$val;
+				print $pipe "S", pack "l", $stub->{num};
+			} elsif(ref $val eq "utils::boolean") {
+				print $pipe $val? "T": "F";
+			} elsif(ref $val) {
+				my $objects = $self->{objects};
+				my $num = %$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
+				$objects->{$num} = $val;
+				warn "$self->{role} add($num) =".Dumper($objects) if $self->{warn} >= 2;
+				print $pipe "B", pack "l", $num;
+			}
+			elsif(!defined $val) {
+				print $pipe "z";	# undef
+			}
+			elsif(($svref = class svref_2object \$val) eq "IV") {	# integer
+				print $pipe "i", pack "l", $val;
+			}
+			elsif($svref eq "NV") {		# double
+				print $pipe "n", pack "d", $val;
+			}
+			elsif($svref eq "PV") {		# string
+				_utf8_off($s) if is_utf8($val);
+				print $pipe "s", pack("L", length $val), $val;
+			}
+		}
+	}
+	return $self;
+}
+
+# считывает структуру из потока ввода
+sub unpack {
+	my ($self) = @_;
+	my $pipe = $self->{r};
+	
+	local ($_, $/) = ();
+	
+	my $ret = [];
+	
+	read $pipe, $_, 1 or die $!;
+	if($_ eq "z") {
+		
+	}
+}
+
 # квотирует для передачи
 sub json_quote {
 	my ($self, $val) = @_;
@@ -97,11 +179,6 @@ sub json_quote {
 	}
 	else { $val = utils::json_quote($val) }
 	return $val;
-}
-
-
-# превращает в бинарный формат и сразу отправляет, если указан
-sub pack {
 }
 
 # превращает в json и сразу отправляет. Объекты складирует в $self->{objects}

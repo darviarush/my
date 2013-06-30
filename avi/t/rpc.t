@@ -10,13 +10,15 @@ use lib '../lib';
 use_ok "rpc";
 use_ok "utils";
 
-$rpc = rpc->new(-1);
+pipe $r, $w or die $!;
+
+$rpc = rpc->new(-1, $r, $w);
 
 $obj1 = bless {}, "test_class1";
 $obj2 = bless {}, "test_class2";
 
 $data_x = [1,3, $obj1, 4];
-$data = {"f": [0, [$data_x], 33, {"data_x" => $data_x, "obj2" => $obj2}, "pp" => 33], "g": "h1"};
+$data = {"f": [0, [$data_x], 33, {"data_x" => $data_x, "obj2" => $obj2}, "pp" => 33], "g": "Привет!"};
 
 $pack = $rpc->pack($data);
 
@@ -29,6 +31,8 @@ $dx2 = $a->{"f"}->[1][0];
 is($dx2, $a->{"f"}->[3]->{"data_x"});
 is($dx2->[2], $obj1);
 is($a->{"f"}->[3]->{"obj2"}, $obj2);
+
+
 
 =pod
 
