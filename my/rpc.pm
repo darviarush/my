@@ -21,7 +21,7 @@ sub new {
 	
 	goto &minor unless defined $prog;
 	
-	 if $prog == -1;
+	bless {prog => -1, objects => {}, role => "TEST"}, $cls if $prog == -1;
 	
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
