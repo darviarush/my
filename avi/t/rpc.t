@@ -10,27 +10,39 @@ use lib '../lib';
 use_ok "rpc";
 use_ok "utils";
 
-pipe $r, $w or die $!;
+open $w, ">", \$file or die $!;
+open $r, "<", \$file or die $!;
 
 $rpc = rpc->new(-1, $r, $w);
 
 $obj1 = bless {}, "test_class1";
 $obj2 = bless {}, "test_class2";
+$obj3 = bless {}, "test_class_for_stub";
 
-$data_x = [1,3, $obj1, 4];
-$data = {"f": [0, [$data_x], 33, {"data_x" => $data_x, "obj2" => $obj2}, "pp" => 33], "g": "Ïðèâåò!"};
+$rpc->{objects}{0} = $obj3;
+$stub3 = $rpc->stub(0);
 
-$pack = $rpc->pack($data);
+$data_x = [1, 3.0, $obj1, 4, "1", $utils::boolean::true];
+$data = {"f"=> [0, $stub3, [$data_x], 33.1, {"data_x" => $data_x, "obj2" => $obj2}, "pp", 33], "g"=> "ÐŸÑ€Ð¸Ð²ÐµÑ‚!"};
 
-is(%{$rpc->{object}}+0, 2);
+$rpc->pack($data);
 
-$a = $rpc->unpack($pack);
+$_ = $file;
+s/[\x0-\x1f]/ /g;
+
+print "$_\n";
+
+is(%{$rpc->{objects}}+0, 3);
+
+$a = $rpc->unpack;
 
 is_deeply($a, $data);
-$dx2 = $a->{"f"}->[1][0];
-is($dx2, $a->{"f"}->[3]->{"data_x"});
+
+$dx2 = $a->{"f"}->[2][0];
+is($dx2, $a->{"f"}->[4]->{"data_x"});
 is($dx2->[2], $obj1);
-is($a->{"f"}->[3]->{"obj2"}, $obj2);
+is($a->{"f"}->[4]->{"obj2"}, $obj2);
+is(ref $dx2->[6], "utils::boolean");
 
 
 

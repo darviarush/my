@@ -1,7 +1,8 @@
 # заглушка
 package rpc;
 
-use B qw/svref_2object class/;
+use Devel::Peek qw//;
+use B qw/svref_2object/;
 use Encode qw/_utf8_off is_utf8/;
 use POSIX qw//;
 use Data::Dumper;
@@ -24,7 +25,7 @@ sub new {
 	
 	goto &minor unless defined $prog;
 	
-	bless {r=>$_[2], w=>$_[3], prog => -1, objects => {}, role => "TEST"}, $cls if $prog == -1;
+	return bless {r=>$_[2], w=>$_[3], prog => -1, objects => {}, role => "TEST"}, $cls if $prog == -1;
 	
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
@@ -90,13 +91,10 @@ sub pack {
 	my ($self, $data) = @_;
 	local ($_, $,, $\) = ();
 	my %is = ();
-	my $svref;
+	my ($svref, $n);
 	my $pipe = $self->{w};
 	
-	my $ret = [$data];
-	my @st = ($ret, 0);
-
-	my $len = 1;
+	my @st = [$data];
 	
 	while(@st) {
 		my $arr = pop @st;
@@ -104,25 +102,35 @@ sub pack {
 
 		while(my($key, $val) = $hash? each %$arr: each @$arr) {
 	
+			if($hash) {
+				_utf8_off($key) if is_utf8($key);
+				print $pipe "s", pack("L", length $key), $key;
+			}
+	
 			if(ref $val eq "HASH") {
-				print $pipe "H", pack "N", 0+%$arr;
+				print($pipe "h", pack "L", $n), next if defined($n = $is{$val});
+				$is{$val} = 0+%is;
+				print $pipe "H", pack "L", 0+%$val;
 				push @st, $arr;
+				$arr = $val;
 				$hash = 1;
-				$arr = $val;
-				next;
-			} elsif(ref $arr eq "ARRAY") {
-				print $pipe "A", pack "N", 0+@$arr;
+			}
+			elsif(ref $val eq "ARRAY") {
+				print($pipe "h", pack "L", $n), next if defined($n = $is{$val});
+				$is{$val} = 0+%is;
+				print $pipe "A", pack "L", 0+@$val;
 				push @st, $arr;
-				$hash = 0;
 				$arr = $val;
-				next;
+				$hash = 0;
+			}
+			elsif(ref $val eq "utils::boolean") {
+				print $pipe $val? "T": "F";
 			}
 			elsif(ref $val eq "rpc::stub") {
 				my $stub = tied %$val;
-				print $pipe "S", pack "l", $stub->{num};
-			} elsif(ref $val eq "utils::boolean") {
-				print $pipe $val? "T": "F";
-			} elsif(ref $val) {
+				print $pipe "S", pack "L", $stub->{num};
+			}
+			elsif(ref $val) {
 				my $objects = $self->{objects};
 				my $num = %$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
 				$objects->{$num} = $val;
@@ -130,18 +138,19 @@ sub pack {
 				print $pipe "B", pack "l", $num;
 			}
 			elsif(!defined $val) {
-				print $pipe "z";	# undef
+				print $pipe "U";	# undef
 			}
-			elsif(($svref = class svref_2object \$val) eq "IV") {	# integer
-				print $pipe "i", pack "l", $val;
+			elsif(($svref = svref_2object \$val) && (($svref = $svref->FLAGS) & B::SVp_IOK)) {	# integer
+				print $pipe "i", pack "l", $val
 			}
-			elsif($svref eq "NV") {		# double
-				print $pipe "n", pack "d", $val;
-			}
-			elsif($svref eq "PV") {		# string
-				_utf8_off($s) if is_utf8($val);
+			elsif($svref & B::SVp_POK) {		# string
+				_utf8_off($val) if is_utf8($val);
 				print $pipe "s", pack("L", length $val), $val;
 			}
+			elsif($svref & B::SVp_NOK) {		# double
+				print $pipe "n", pack "d", $val;
+			}
+			else {	die "Значение неизвестного типа ".Devel::Peek::Dump($val)." val=`$val`" }
 		}
 	}
 	return $self;
@@ -154,12 +163,73 @@ sub unpack {
 	
 	local ($_, $/) = ();
 	
+	my (@is, $len, $arr, $hash, $key, $val, $replace_arr);
 	my $ret = [];
-	
-	read $pipe, $_, 1 or die $!;
-	if($_ eq "z") {
-		
+	my @st = [$ret, 0, 0, 1];
+
+	while(@st) {
+		($arr, $hash, $key, $len) = @{pop @st};
+
+		while($len--) {
+print "$arr len=$len\n";
+			read $pipe, $_, 1 or do {
+				print "count=".int(@$ret)."\n";
+				die $!;
+			};
+$who = $_;
+			if($_ eq "h") {
+				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
+				$val = $is[unpack "L", $_];
+			}
+			elsif($_ eq "H") { $replace_arr = 1; $val = {} }
+			elsif($_ eq "A") { $replace_arr = 0; $val = []; }
+			elsif($_ eq "S") {
+				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
+				$val = $objects->{unpack "L", $_};
+			}
+			elsif($_ eq "B") {
+				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
+				$val = $self->stub(unpack "L", $_);
+			}
+			elsif($_ eq "T") { $val = $utils::boolean::true }
+			elsif($_ eq "F") { $val = $utils::boolean::false }
+			elsif($_ eq "U") { $val = undef }
+			elsif($_ eq "i") {
+				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
+				$val = unpack "l", $_;
+			}
+			elsif($_ eq "n") {		# double
+				die "Не 8 байт считано. $!" if 8 != read $pipe, $_, 8;
+				$val = unpack "d", $_;
+			}
+			elsif($_ eq "s") {		# string
+				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
+				my $n = unpack "L", $_;
+				die "Не $n байт считано. $!" if $n != read $pipe, $val, $n;
+			}
+			
+			#print "val=`$val`\n";
+			
+			if($hash) {
+				if($len % 2) { $key = $val }
+				else { $arr->{$key} = $val }
+			}
+			else { push @$arr, $val }
+			
+			print "$arr len=$len hash=$hash who=$who val=$val\n";
+			
+			if(defined $replace_arr) {
+				push @st, [$arr, $hash, $key, $len];
+				push @is, $arr = $val;
+				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
+				($hash, $len) = ($replace_arr, ($replace_arr+1) * unpack "L", $_);
+				$replace_arr = undef;
+			}
+			
+		}
 	}
+	print "ret=$ret=".Dumper($ret);
+	return $ret->[0];
 }
 
 # квотирует для передачи
@@ -384,12 +454,12 @@ sub send {
 sub TIEHASH { my ($cls, $rpc, $num) = @_; bless {rpc => $rpc, num => $num}, $cls }
 sub FETCH { my ($self, $key) = @_; $self->send("get", [$key]) }
 sub STORE { my ($self, $key, $val) = @_; $self->send("set", [$key, $val]) }
-#sub DELETE { my ($self, $key) = @_; $self->send("del", {key=>$key}) }
-#sub CLEAR { my ($self) = @_; $self->send("clear", {}) }
-#sub EXISTS { my ($self, $key) = @_; $self->send("in", {key=>$key}) }
-#sub SCALAR { my ($self) = @_; $self->send("len", {}) }
+sub DELETE { my ($self, $key) = @_; warn "NOT IMPLEMENTED method DELETE"; undef }
+sub CLEAR { my ($self) = @_; warn "NOT IMPLEMENTED method CLEAR"; undef }
+sub EXISTS { my ($self, $key) = @_; warn "NOT IMPLEMENTED method EXISTS"; undef }
+sub SCALAR { my ($self) = @_; warn "NOT IMPLEMENTED method SCALAR"; 0 }
 
-#    FIRSTKEY this
-#    NEXTKEY this, lastkey
-#    DESTROY this
-#    UNTIE this
+sub FIRSTKEY { my ($self) = @_; warn "NOT IMPLEMENTED method FIRSTKEY"; undef }
+sub NEXTKEY { my ($self, $lastkey) = @_; warn "NOT IMPLEMENTED method NEXTKEY"; undef }
+#sub DESTROY { my ($self) = @_; warn "NOT IMPLEMENTED method DESTROY"; undef }
+sub UNTIE { my ($self) = @_; warn "NOT IMPLEMENTED method UNTIE"; undef }
