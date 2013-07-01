@@ -5,12 +5,44 @@ require_once dirname(__FILE__)."/../../my/rpc.php";
 
 plan(23);
 
+open $w, ">", \$file or die $!;
+open $r, "<", \$file or die $!;
+
+$rpc = new rpc(-1, $r, $w);
+
+
+class test_class1 {}; $obj1 = new test_class1();
+class test_class2 {}; $obj2 = new test_class2();
+class test_class_for_stub {}; $obj3 = new test_class_for_stub();
+
+$rpc->objects[0] = $obj3;
+$stub3 = $rpc->stub(0);
+
+$data_x = array(1, 3.0, $obj1, 4, "1", true);
+$data = array("f"=> array(0, $stub3, array($data_x), 33.1, array("data_x" => $data_x, "obj2" => $obj2), "pp", 33), "g"=> "Привет!");
+
+$rpc->pack($data);
+
+#$_ = $file;
+#s/[\x0-\x1f]/ /g;
+#print "$_\n";
+
+is($rpc->{objects}}, 3);
+
+$unpack = $rpc->unpack;
+
+$dx2 = $unpack->{"f"}->[2]->[0];
+
+is($dx2, $unpack->{"f"}->[4]->{"data_x"});
+is(ref($dx2->[2]), "rpc::stub");
+is(ref($unpack->{"f"}->[4]->{"obj2"}), "rpc::stub");
+is(ref($dx2->[5]), "utils::boolean");
+is($unpack->{"f"}->[1], $obj3);
+is($dx2->[0], 1);
+is($unpack->{"f"}->[0], 0, "end");
 
 
 $rpc = new rpc('php');
-
-$a = $rpc->unpack('{"f":["x",1]}');
-is_deeply($a, array("f"=>["x",1]));
 
 //$rpc->warn(1);
 

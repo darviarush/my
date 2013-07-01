@@ -31,7 +31,7 @@ $rpc->pack($data);
 #s/[\x0-\x1f]/ /g;
 #print "$_\n";
 
-is(%{$rpc->{objects}}+0, 3);
+is(3, 0+keys %{$rpc->{objects}});
 
 $unpack = $rpc->unpack;
 
