@@ -5,10 +5,10 @@ require_once dirname(__FILE__)."/../../my/rpc.php";
 
 plan(23);
 
-open $w, ">", \$file or die $!;
-open $r, "<", \$file or die $!;
+$f = fopen("php://memory", "rb+");
+ok($f);
 
-$rpc = new rpc(-1, $r, $w);
+$rpc = new rpc(-1, $f, $f);
 
 
 class test_class1 {}; $obj1 = new test_class1();
@@ -34,11 +34,11 @@ $unpack = $rpc->unpack();
 $dx2 = $unpack["f"][2][0];
 
 is($dx2, $unpack["f"][4]["data_x"]);
-is(get_class($dx2->[2]), "RPCstub");
+is(get_class($dx2[2]), "RPCstub");
 is(get_class($unpack["f"][4]["obj2"]), "RPCstub");
-ok($dx2->[5] === true);
-is($unpack->{"f"}->[1], $obj3);
-is($dx2->[0], 1);
+ok($dx2[5] === true);
+is($unpack["f"][1], $obj3);
+is($dx2[0], 1);
 is($unpack["f"][0], 0, "end");
 
 /*
