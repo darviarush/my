@@ -21,6 +21,8 @@ sub new {
 	bless \(my $state = $value), $class;
 }
 
+sub bool { $_[1]? $true: $false }
+
 
 
 package utils;

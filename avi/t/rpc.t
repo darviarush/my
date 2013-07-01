@@ -19,7 +19,7 @@ $obj1 = bless {}, "test_class1";
 $obj2 = bless {}, "test_class2";
 $obj3 = bless {}, "test_class_for_stub";
 
-$rpc->{objects}{0} = $obj3;
+$rpc->{objects}->{0} = $obj3;
 $stub3 = $rpc->stub(0);
 
 $data_x = [1, 3.0, $obj1, 4, "1", $utils::boolean::true];
@@ -27,26 +27,25 @@ $data = {"f"=> [0, $stub3, [$data_x], 33.1, {"data_x" => $data_x, "obj2" => $obj
 
 $rpc->pack($data);
 
-$_ = $file;
-s/[\x0-\x1f]/ /g;
-
-print "$_\n";
+#$_ = $file;
+#s/[\x0-\x1f]/ /g;
+#print "$_\n";
 
 is(%{$rpc->{objects}}+0, 3);
 
-$a = $rpc->unpack;
+$unpack = $rpc->unpack;
 
-is_deeply($a, $data);
+$dx2 = $unpack->{"f"}->[2]->[0];
 
-$dx2 = $a->{"f"}->[2][0];
-is($dx2, $a->{"f"}->[4]->{"data_x"});
-is($dx2->[2], $obj1);
-is($a->{"f"}->[4]->{"obj2"}, $obj2);
-is(ref $dx2->[6], "utils::boolean");
+is($dx2, $unpack->{"f"}->[4]->{"data_x"});
+is(ref($dx2->[2]), "rpc::stub");
+is(ref($unpack->{"f"}->[4]->{"obj2"}), "rpc::stub");
+is(ref($dx2->[5]), "utils::boolean");
+is($unpack->{"f"}->[1], $obj3);
+is($dx2->[0], 1);
+is($unpack->{"f"}->[0], 0, "end");
 
 
-
-=pod
 
 $rpc = rpc->new("perl");
 
@@ -109,5 +108,3 @@ is($ret, 10);
 
 
 $rpc->close;
-
-=cut

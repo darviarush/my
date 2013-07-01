@@ -25,7 +25,7 @@ sub new {
 	
 	goto &minor unless defined $prog;
 	
-	return bless {r=>$_[2], w=>$_[3], prog => -1, objects => {}, role => "TEST"}, $cls if $prog == -1;
+	return bless {r=>$_[2], w=>$_[3], prog => -1, objects => {}, nums => [], role => "TEST"}, $cls if $prog == -1;
 	
 	#open2 my($reader), my($writer), $prog{$prog} // $prog or die "Ошибка создания канала. $!";
 	my ($reader, $ch_writer, $ch_reader, $writer);
@@ -54,14 +54,14 @@ sub new {
 		exec $prog or die "Ошибка создания подчинённого. $!";
 	}
 		
-	bless {r => $reader, w => $writer, prog => $prog, objects => {}, bless => "\0bless\0", stub => "\0stub\0", role => "MAJOR"}, $cls;
+	bless {r => $reader, w => $writer, prog => $prog, objects => {}, nums => [], warn=>0, role => "MAJOR"}, $cls;
 }
 
 # закрывает соединение
 sub close {
 	my ($self) = @_;
 	local ($,, $\) = ();
-	$self->pack("ok", []);
+	$self->ok;
 	close $self->{w} or die "Не закрыт поток записи";
 	close $self->{r} or die "Не закрыт поток чтения";
 }
@@ -78,7 +78,7 @@ sub minor {
 	select $stdout;
 
 	
-	my $self = bless {r => $r, w => $w, objects => {}, bless => "\0stub\0", stub => "\0bless\0", role => "MINOR"}, $cls;
+	my $self = bless {r => $r, w => $w, objects => {}, nums => [], warn=>0, role => "MINOR"}, $cls;
 	my @ret = $self->ret;
 	warn "MINOR ENDED @ret" if $self->{warn};
 	return @ret;
@@ -101,23 +101,25 @@ sub pack {
 		my $hash = ref $arr eq "HASH";
 
 		while(my($key, $val) = $hash? each %$arr: each @$arr) {
-	
+			
 			if($hash) {
 				_utf8_off($key) if is_utf8($key);
 				print $pipe "s", pack("L", length $key), $key;
 			}
-	
+			
 			if(ref $val eq "HASH") {
 				print($pipe "h", pack "L", $n), next if defined($n = $is{$val});
-				$is{$val} = 0+%is;
-				print $pipe "H", pack "L", 0+%$val;
+				my $num = keys %is;
+				$is{$val} = $num;
+				print $pipe "H", pack "L", 0+keys(%$val);
 				push @st, $arr;
 				$arr = $val;
 				$hash = 1;
 			}
 			elsif(ref $val eq "ARRAY") {
 				print($pipe "h", pack "L", $n), next if defined($n = $is{$val});
-				$is{$val} = 0+%is;
+				my $num = keys %is;
+				$is{$val} = $num;
 				print $pipe "A", pack "L", 0+@$val;
 				push @st, $arr;
 				$arr = $val;
@@ -132,7 +134,7 @@ sub pack {
 			}
 			elsif(ref $val) {
 				my $objects = $self->{objects};
-				my $num = %$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
+				my $num = keys %$objects;
 				$objects->{$num} = $val;
 				warn "$self->{role} add($num) =".Dumper($objects) if $self->{warn} >= 2;
 				print $pipe "B", pack "l", $num;
@@ -141,7 +143,7 @@ sub pack {
 				print $pipe "U";	# undef
 			}
 			elsif(($svref = svref_2object \$val) && (($svref = $svref->FLAGS) & B::SVp_IOK)) {	# integer
-				print $pipe "i", pack "l", $val
+				print $pipe $val == 1? "1": $val == 0? "0": ("i", pack "l", $val);
 			}
 			elsif($svref & B::SVp_POK) {		# string
 				_utf8_off($val) if is_utf8($val);
@@ -153,6 +155,7 @@ sub pack {
 			else {	die "Значение неизвестного типа ".Devel::Peek::Dump($val)." val=`$val`" }
 		}
 	}
+	
 	return $self;
 }
 
@@ -163,6 +166,7 @@ sub unpack {
 	
 	local ($_, $/) = ();
 	
+	my $objects = $self->{objects};
 	my (@is, $len, $arr, $hash, $key, $val, $replace_arr);
 	my $ret = [];
 	my @st = [$ret, 0, 0, 1];
@@ -171,15 +175,13 @@ sub unpack {
 		($arr, $hash, $key, $len) = @{pop @st};
 
 		while($len--) {
-print "$arr len=$len\n";
-			read $pipe, $_, 1 or do {
-				print "count=".int(@$ret)."\n";
-				die $!;
-			};
-$who = $_;
+
+			read $pipe, $_, 1 or die "Оборван поток ввода. $!";
+			
 			if($_ eq "h") {
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				$val = $is[unpack "L", $_];
+				my $num = unpack "L", $_;
+				$val = $is[$num];
 			}
 			elsif($_ eq "H") { $replace_arr = 1; $val = {} }
 			elsif($_ eq "A") { $replace_arr = 0; $val = []; }
@@ -194,6 +196,8 @@ $who = $_;
 			elsif($_ eq "T") { $val = $utils::boolean::true }
 			elsif($_ eq "F") { $val = $utils::boolean::false }
 			elsif($_ eq "U") { $val = undef }
+			elsif($_ eq "1") { $val = 1 }
+			elsif($_ eq "0") { $val = 0 }
 			elsif($_ eq "i") {
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
 				$val = unpack "l", $_;
@@ -208,15 +212,11 @@ $who = $_;
 				die "Не $n байт считано. $!" if $n != read $pipe, $val, $n;
 			}
 			
-			#print "val=`$val`\n";
-			
 			if($hash) {
 				if($len % 2) { $key = $val }
 				else { $arr->{$key} = $val }
 			}
 			else { push @$arr, $val }
-			
-			print "$arr len=$len hash=$hash who=$who val=$val\n";
 			
 			if(defined $replace_arr) {
 				push @st, [$arr, $hash, $key, $len];
@@ -228,112 +228,51 @@ $who = $_;
 			
 		}
 	}
-	print "ret=$ret=".Dumper($ret);
+	
 	return $ret->[0];
 }
 
-# квотирует для передачи
-sub json_quote {
-	my ($self, $val) = @_;
-	if(ref $val eq "rpc::stub") {
-		my $stub = tied %$val;
-		$val = "{".utils::json_quote($self->{stub}).":$stub->{num}}";
-	} elsif(ref $val eq "utils::boolean") {
-		$val = "$val";
-	} elsif(ref $val) {
-		my $objects = $self->{objects};
-		my $num = %$objects + 0;		#++$self->{obj_counter}; #%$objects + 0;
-		$objects->{$num} = $val;
-		warn "$self->{role} add($num) =".Dumper($objects) if $self->{warn} >= 2;
-		$val = "{".utils::json_quote($self->{bless}).":$num}";
-	}
-	else { $val = utils::json_quote($val) }
-	return $val;
+# отправляет команду и получает ответ
+sub reply {
+	my $self = shift;
+	warn "$self->{role} -> ".Dumper(\@_) if $self->{warn};
+	$self->pack(\@_)->pack($self->{nums})->ret
 }
 
-# превращает в json и сразу отправляет. Объекты складирует в $self->{objects}
-sub pack1 {
-	my ($self, $cmd, $data) = @_;
-	local ($,, $\) = ();
-	my $pipe = $self->{w};
-	my ($so, $flag, @json) = (0, 1);
-	
-	utils::walk_data($data, sub {
-		my ($ref, $key) = @_;
-		push @json, "," if $flag and $so;
-		$flag = 1;
-		push @json, utils::json_quote($key), ":" if defined $key;
-		push @json, $self->json_quote($$ref);
-	}, sub {
-		my ($ref, $key, $class) = @_;
-		push @json, "," if $so++ and $flag;
-		push @json, utils::json_quote($key), ":" if defined $key;
-		push @json, $class == 0? "[": "{";
-		$flag = 0;
-	}, sub {
-		my ($ref, $key, $class) = @_;
-		push @json, $class == 0? "]": "}";
-		$so--;
-		$flag = 1;
-	});
-	
-	warn "$self->{role} -> `$cmd` ".join("", @json)." ".join(",", @{$self->{erase}}) if $self->{warn};
-	
-	print $pipe $cmd, "\n", @json, "\n", join(",", @{$self->{erase}}), "\n";
-	@{$self->{erase}} = ();
-	return $self;
+# отправляет ответ
+sub ok {
+	my ($self, $ret, $cmd) = @_;
+	warn "$self->{role} -> ".Dumper([$cmd // "ok", $ret]) if $self->{warn};
+	$self->pack([$cmd // "ok", $ret])->pack($self->{nums});
 }
 
-# распаковывает
-sub unpack1 {
-	my ($self, $data) = @_;
-
-	$data = utils::from_json($data);
-	my $objects = $self->{objects};
-	my $bless = $self->{bless};
-	my $stub = $self->{stub};
-	
-	utils::walk_data($data, sub {}, sub {
-		my ($ref, $key, $hash) = @_;
-		return unless $hash;
-		
-		my $num;
-		my $val = $$ref;
-		
-		if(defined($num = $val->{$stub})) {
-			$$ref = $self->stub($num);
-		}
-		elsif(defined($num = $val->{$bless})) {
-			$$ref = $objects->{$num};
-		}		
-	});
-	
-	return $data;
-}
-
-# вызывает функцию
+# вызывает функцию $rpc->call($name, @args)
 sub call {
-	my ($self, $name, @args) = @_;
-	$self->pack("call $name ".(wantarray?1:0), \@args)->ret;
+	my $self = shift;
+	my $name = shift;
+	$self->reply("call", $name, \@_, wantarray);
 }
 
 # вызывает метод
 sub apply {
-	my ($self, $class, $name, @args) = @_;
-	$self->pack("apply $class $name ".(wantarray?1:0), \@args)->ret;
+	my $self = shift;
+	my $class = shift;
+	my $name = shift;
+	$self->reply("apply", $class, $name, \@_, wantarray);
 }
 
 # выполняет код
 sub eval {
-	my ($self, @args) = @_;
-	$self->pack("eval ".(wantarray?1:0), \@args)->ret;
+	my $self = shift;
+	my $eval = shift;
+	$self->reply("eval", $eval, \@_, wantarray);
 }
 
 # устанавливает warn на миноре
 sub warn {
 	my ($self, $val) = @_;
 	$self->{warn} = $val+=0;
-	$self->pack("warn", $val)->ret;
+	$self->reply("warn", $val);
 }
 
 # удаляет ссылки на объекты из objects
@@ -348,68 +287,67 @@ sub erase {
 sub ret {
 	my ($self) = @_;
 	local ($,, $\) = ();
-	my $pipe = $self->{r};
-	my (@ret, $args, @nums);
+
+	my @ret;
 	
 	for(;;) {	# клиент послал запрос
-		my $ret = <$pipe>;
+		my $ret = $self->unpack;
 		$self->{warn} && warn("$self->{role} closed: ".Dumper([caller(1)])), 
-		return unless defined $ret;	# закрыт канал
-		my $arg = scalar <$pipe>;
-		my $nums = scalar <$pipe>;
-		chop $nums;
-		@nums = split /,/, $nums;
-		$args = $self->unpack($arg);
+		return unless defined $ret and ref $ret;	# закрыт канал
+	
+		my $nums = $self->unpack;
 		
-		chop $ret;
+		warn "$self->{role} <- ".Dumper($ret)."\n" if $self->{warn};
 		
-		warn "$self->{role} <- $ret $arg $nums\n" if $self->{warn};
+		my $cmd = shift @$ret;
 		
-		$self->erase(\@nums), last if $ret eq "ok";
-		$self->erase(\@nums), die $args if $ret eq "error";
+		$self->erase($nums), last if $cmd eq "ok";
+		$self->erase($nums), die $ret->[0] if $cmd eq "error";
 		
 		eval {
-		
-			my ($cmd, $arg1, $arg2, $arg3) = split / /, $ret;
+
 			if($cmd eq "stub") {
-				if($arg3) { @ret = $self->{objects}->{$arg1}->$arg2(@$args); $self->pack("ok", \@ret) }
-				else { $self->pack("ok", scalar $self->{objects}->{$arg1}->$arg2(@$args)) }
+				my ($num, $name, $args, $wantarray) = @$ret;
+				if($wantarray) { @ret = $self->{objects}->{$num}->$name(@$args); $self->ok(\@ret) }
+				else { $self->ok(scalar $self->{objects}->{$num}->$name(@$args)) }
 			}
 			elsif($cmd eq "get") {
-				$self->pack("ok", $self->{objects}->{$arg1}->{$args->[0]})
+				my ($num, $key) = @$ret;
+				$self->ok($self->{objects}->{$num}->{$key});
 			}
 			elsif($cmd eq "set") {
-				$self->{objects}->{$arg1}->{$args->[0]} = $args->[1];
-				$self->pack("ok", 1);
+				my ($num, $key, $val) = @$ret;
+				$self->{objects}->{$num}->{$key} = $val;
+				$self->ok(1);
 			}
 			elsif($cmd eq "warn") {
-				$self->{warn} = $args;
-				$self->pack("ok", 1);
+				$self->{warn} = $ret->[0];
+				$self->ok(1);
 			}
 			elsif($cmd eq "apply") {
-				if($arg3) { @ret = $arg1->$arg2(@$args); $self->pack("ok", \@ret) }
-				else { $self->pack("ok", scalar $arg1->$arg2(@$args)) }
-				die $@ // $! if $@ // $!;
+				my ($class, $name, $args, $wantarray) = @$ret;
+				if($wantarray) { @ret = $class->$name(@$args); $self->ok(\@ret) }
+				else { $self->ok(scalar $class->$name(@$args)) }
 			}
 			elsif($cmd eq "call") {
-				if($arg2) { @ret = eval $arg1.'(@$args)'; $self->pack("ok", \@ret) }
-				else { $self->pack("ok", scalar eval($arg1.'(@$args)')) }
+				my ($name, $args, $wantarray) = @$ret;
+				if($wantarray) { @ret = eval $name.'(@$args)'; die $@ // $! if $@ // $!; $self->ok(\@ret) }
+				else { @ret = scalar eval $name.'(@$args)'; die $@ // $! if $@ // $!; $self->ok($ret[0]) }
 			}
 			elsif($cmd eq "eval") {
-				my $eval = shift @$args;
-				if($arg1) { @ret = eval $eval }
-				else { @ret = scalar eval $eval }
-				die $@ // $! if $@ // $!;
-				$self->pack("ok", $arg1? \@ret: $ret[0]);
+				my ($eval, $args, $wantarray) = @$ret;
+				if($wantarray) { @ret = eval $eval; die $@ // $! if $@ // $!; $self->ok(\@ret) }
+				else { @ret = scalar eval $eval; die $@ // $! if $@ // $!; $self->ok($ret[0]) }
 			}
 			else {
 				die "$self->{role} Неизвестная команда `$cmd` `$ret` `$arg`";
 			}
 		};
-		$self->pack("error", $@ // $!) if $@ // $!;
-		$self->erase(\@nums); 
+		print("error: `".($@ // $!)."`\n"), $self->ok($@ // $!, "error") if $@ // $!;
+		$self->erase($nums); 
 	}
 
+	my $args = $ret->[0];
 	return wantarray && ref $args eq "ARRAY"? @$args: $args;
 }
 
@@ -426,12 +364,12 @@ sub stub {
 package rpc::stub;
 
 sub AUTOLOAD {
-	my ($self, @param) = @_;
+	my $self = shift;
 	local ($&, $`, $');
 	$AUTOLOAD =~ /\w+$/;
 	my $name = $&;
 	$self = tied %$self;
-	$self->{rpc}->pack("stub $self->{num} $name ".(wantarray?1:0), \@param)->ret;
+	$self->{rpc}->reply("stub", $self->{num}, $name, \@_, $utils::boolean->bool(wantarray));
 }
 
 sub DESTROY {
@@ -444,16 +382,10 @@ package rpc::prestub;
 
 use Data::Dumper;
 
-sub send {
-	my ($self, $cmd, $args) = @_;
-	my $ret = $self->{rpc}->pack("$cmd $self->{num}", $args)->ret;
-	#warn "$cmd=".Dumper($args)."==>".Dumper($ret);
-	$ret
-}
-
 sub TIEHASH { my ($cls, $rpc, $num) = @_; bless {rpc => $rpc, num => $num}, $cls }
-sub FETCH { my ($self, $key) = @_; $self->send("get", [$key]) }
-sub STORE { my ($self, $key, $val) = @_; $self->send("set", [$key, $val]) }
+sub FETCH { my ($self, $key) = @_; $self->{rpc}->reply("get", $key) }
+sub STORE { my ($self, $key, $val) = @_; $self->{rpc}->reply("set", $key, $val) }
+
 sub DELETE { my ($self, $key) = @_; warn "NOT IMPLEMENTED method DELETE"; undef }
 sub CLEAR { my ($self) = @_; warn "NOT IMPLEMENTED method CLEAR"; undef }
 sub EXISTS { my ($self, $key) = @_; warn "NOT IMPLEMENTED method EXISTS"; undef }
