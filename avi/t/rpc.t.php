@@ -27,21 +27,21 @@ $rpc->pack($data);
 #s/[\x0-\x1f]/ /g;
 #print "$_\n";
 
-is($rpc->{objects}}, 3);
+is(count($rpc->objects), 3);
 
-$unpack = $rpc->unpack;
+$unpack = $rpc->unpack();
 
-$dx2 = $unpack->{"f"}->[2]->[0];
+$dx2 = $unpack["f"][2][0];
 
-is($dx2, $unpack->{"f"}->[4]->{"data_x"});
-is(ref($dx2->[2]), "rpc::stub");
-is(ref($unpack->{"f"}->[4]->{"obj2"}), "rpc::stub");
-is(ref($dx2->[5]), "utils::boolean");
+is($dx2, $unpack["f"][4]["data_x"]);
+is(get_class($dx2->[2]), "RPCstub");
+is(get_class($unpack["f"][4]["obj2"]), "RPCstub");
+ok($dx2->[5] === true);
 is($unpack->{"f"}->[1], $obj3);
 is($dx2->[0], 1);
-is($unpack->{"f"}->[0], 0, "end");
+is($unpack["f"][0], 0, "end");
 
-
+/*
 $rpc = new rpc('php');
 
 //$rpc->warn(1);
@@ -129,3 +129,4 @@ is($ret, 60);
 
 
 $rpc->close();
+*/

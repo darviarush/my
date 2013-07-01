@@ -9,14 +9,15 @@ class RPC {
 		"ruby" => "ruby -I'%s' -e 'require \"rpc.rb\"; RPC.new'"
 	);
 
-	public $r, $w, $objects, $prog, $bless, $stub, $role, $process, $wantarray = 1, $erase = array(), $warn = 0;
+	public $r, $w, $objects = array(), $prog, $role, $process, $wantarray = 1, $erase = array(), $warn = 0;
 
 
 
 	# конструктор. Создаёт соединение
-	function __construct($prog = null) {
+	function __construct($prog = null, $r = null, $w = null) {
 	
 		if($prog === null) return $this->minor();
+		if($prog === -1) return 
 		
 		$descriptorspec = array(
 			4 => array("pipe", "rb"),	// это канал, из которого потомок будет читать
