@@ -1,4 +1,4 @@
-use Test::More tests => 17;
+use Test::More tests => 24;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;
@@ -48,7 +48,7 @@ is($unpack->{"f"}->[0], 0, "end");
 
 
 $rpc = rpc->new("perl");
-
+#$rpc->warn(1);
 @A = $rpc->eval('reverse(@$args)', 1,[2,4],{"f"=>"p"},3);
 is_deeply(\@A, [3,{"f"=>"p"},[2,4],1]);
 
@@ -93,8 +93,8 @@ $rpc->eval("test");
 
 
 
-$bless = $rpc->eval("\$args->[0]->{bless}", $rpc);
-is($bless, $rpc->{bless});
+$role = $rpc->eval("\$args->[0]->{role}", $rpc);
+is($role, $rpc->{role});
 
 #$rpc->warn(1);
 

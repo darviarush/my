@@ -1,15 +1,3 @@
-# заглушка
-package rpc;
-
-use Devel::Peek qw//;
-use B qw/svref_2object/;
-use Encode qw/_utf8_off is_utf8/;
-use POSIX qw//;
-use Data::Dumper;
-
-use utils;
-
-
 
 %prog = (
 "perl" => "perl -I'%s' -e 'require rpc; rpc->new'",
