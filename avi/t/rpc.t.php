@@ -11,12 +11,12 @@ ok($f);
 $rpc = new rpc(-1, $f, $f);
 
 
-class test_class1 {}; $obj1 = new test_class1();
-class test_class2 {}; $obj2 = new test_class2();
-class test_class_for_stub {}; $obj3 = new test_class_for_stub();
+class test_class1 { function __tostring(){ return get_class($this); } }; $obj1 = new test_class1();
+class test_class2 extends test_class1 {}; $obj2 = new test_class2();
+class test_class_for_stub extends test_class1 {}; $obj3 = new test_class_for_stub();
 
 $rpc->objects[0] = $obj3;
-$stub3 = new RPCstub(0);
+$stub3 = $rpc->stub(0);
 
 $data_x = array(1, 3.0, $obj1, 4, "1", true);
 $data = array("f"=> array(0, $stub3, array($data_x), 33.1, array("data_x" => $data_x, "obj2" => $obj2), "pp", 33), "g"=> "Привет!");

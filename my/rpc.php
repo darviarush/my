@@ -84,26 +84,32 @@ class RPC {
 		$pipe = $this->w;
 		
 		$is = array();
-		$st = array(array($data), 0);
+		$st = array(array(&$data), 0);
 		
 		while($st) {
 			$hash = array_pop($st);
-			$arr = array_pop($st);
-
+			$arr = &$st[count($st)-1];
+			array_pop($st);
+			
+			echo "arr cur = ".current($arr)."\n";
+			
 			while(list($key, $val) = each($arr)) {
+				
+				if($hash) fwrite($pipe, "s".pack("l", strlen($key)).$key);
 				
 				#foreach(($hash? array($key, $val): array($val)) as $val) {
 				
 					echo "$key		".gettype($val)."=$val\n";
 				
 					if(is_array($val)) {
-						if(in_array($val, $is, true)) fwrite($pipe, "h".pack("l", $n));
+						if($n = in_array($val, $is, true)) fwrite($pipe, "h".pack("l", $n));
+						$is[] = $val;
 						
 						$is_assoc = is_assoc($val);
 						
-						$is[] = $val;
 						fwrite($pipe, ($is_assoc? "H": "A").pack("l", count($val)));
-						$st []= $arr;
+						#reset($arr);
+						$st []= &$arr;
 						$st []= $hash;
 						$arr = $val;
 						$hash = $is_assoc;
@@ -112,7 +118,7 @@ class RPC {
 					else if($val === false) fwrite($pipe, "F");
 					else if($val === null) fwrite($pipe, "U");
 					else if(is_object($val)) {
-						if(get_class($val) == "RPCstub") fwrite($pipe, "S".pack("l", $val->__num));
+						if($val instanceof RPCstub) fwrite($pipe, "S".pack("l", $val->__num));
 						else {
 							$num = count($this->objects);
 							$this->objects[$num] = $val;
@@ -159,7 +165,7 @@ class RPC {
 				}
 				else if($_ == "B") {
 					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$val = new RPCStub(unpack("l", $_));
+					$val = $this->stub(unpack("l", $_));
 				}
 				else if($_ == "T") $val = true;
 				else if($_ == "F") $val = false;
@@ -294,22 +300,22 @@ class RPC {
 					$this->warn = $ret[0];
 					$this->ok(1);
 				}
-				elseif($cmd == "new") {
+				else if($cmd == "new") {
 					list($class, $args, $wantarray) = $ret;
 					$ret = new $class($args); 
 					$this->ok($ret);
 				}
-				elseif($cmd == "apply") {
+				else if($cmd == "apply") {
 					list($class, $name, $args, $wantarray) = $ret;
 					$ret = call_user_func_array(array($class, $name), $args); 
 					$this->ok($ret);
 				}
-				elseif($cmd == "call") {
+				else if($cmd == "call") {
 					list($name, $args, $wantarray) = $ret;
 					$ret = call_user_func_array($name, $args); 
 					$this->ok($ret);
 				}
-				elseif($cmd == "eval") {
+				else if($cmd == "eval") {
 					list($eval, $args, $wantarray) = $ret;
 					$ret = eval($eval);
 					if ( $ret === false && ( $error = error_get_last() ) )
@@ -328,18 +334,21 @@ class RPC {
 
 		return $args;
 	}
+	
+	# создаёт заглушку
+	function stub($num) {
+		$stub = new RPCstub;
+		$stub->__num = $num;
+		$stub->__rpc = $this;
+		return $stub;
+	}
 
 }
 
 # заглушка
 class RPCstub {
 	public $__num, $__rpc;
-	
-	function __construct($num) {
-		$this->__num = $num;
-		$this->__rpc = $this;
-	}
-	
+		
 	function __call($name, $param) {
 		return $this->__rpc->reply("stub", $this->__num, $name, $param, $this->__rpc->wantarray, $param);
 	}
@@ -361,7 +370,7 @@ class RPCstub {
 	}
 	
 	function __toString() {
-		return "RPCstub(".$this->num.")";
+		return "RPCstub(".$this->__num.")";
 	}
 }
 

@@ -65,14 +65,13 @@ class RPC
 
 	# создаёт подчинённого
 	def minor
-	
 		@r = IO.new(4, "rb")
 		@w = IO.new(5, "wb")
 
 		@role = "MINOR"
 
 		ret = self.ret
-		
+
 		$stderr.puts "MINOR ENDED #{ret}\n"
 		@objects = []
 		return ret
@@ -83,141 +82,129 @@ class RPC
 		is = Hash.new
 		pipe = @w
 		
-		st = [[data]]
+		lun = Proc.new do		
+			if hash
+				pipe.puts "s", [key.length].pack("l"), key
+			end
+			
+			if [Hash, Array].include? val.class 
+				if n = is[val.object_id]
+					pipe.puts "h", [n].pack("l")
+				else
+					num = is.length
+					is[val.object_id] = num
+					if val.class == Hash
+						pipe.puts "H", [val.length].pack("l")
+						for k, v in val
+							lun.call k
+							lun.call v
+						end
+					else
+						pipe.puts "A", [val.length].pack("l")
+						val.each(lun)
+					end
+				end
+			elsif val.class == TrueClass
+				pipe.putc "T"
+			elsif val.class == FalseClass
+				pipe.putc "F"
+			elsif val.class == NilClass
+				pipe.putc "U"
+			elsif val.class == RPCstub
+				pipe.puts "S", [val.__num].pack("l")
+			elsif val.class == Fixnum			# 0.class.class.ancestors
+				pipe.puts val == 1? "1": val == 0? "0": "i"+[val].pack("l")
+			elsif val.class == String
+				pipe.puts "s", [val.length].pack("l"), val
+			elsif val.class == Float
+				pipe.puts "n", [val].pack("d")
+			else	# несериализируемый object
+				num = @objects.length
+				@objects[num] = val
+				$stderr.puts "#{@role} add(#{num}) ="+objects if @warn >= 2
+				pipe "B", [num].pack("l")
+				#raise RPCException, "Значение неизвестного типа #{val}"
+			end
+		end
 		
-		while st.length != 0
-			arr = st.pop
-			i = st.pop
-			hash = arr.class == Hash
-
-			while(my(key, val) = hash? each %arr: each @arr) {
-				
-				if(hash) {
-					_utf8_off(key) if is_utf8(key);
-					print pipe "s", pack("l", length key), key;
-				}
-				
-				if(ref val eq "HASH") {
-					print(pipe "h", pack "l", n), next if defined(n = is{val});
-					my num = keys %is;
-					is{val} = num;
-					print pipe "H", pack "l", 0+keys(%val);
-					push @st, arr;
-					arr = val;
-					hash = 1;
-				}
-				elsif(ref val eq "ARRAY") {
-					print(pipe "h", pack "l", n), next if defined(n = is{val});
-					my num = keys %is;
-					is{val} = num;
-					print pipe "A", pack "l", 0+@val;
-					push @st, arr;
-					arr = val;
-					hash = 0;
-				}
-				elsif(ref val eq "utils::boolean") {
-					print pipe val? "T": "F";
-				}
-				elsif(ref val eq "rpc::stub") {
-					my stub = tied %val;
-					print pipe "S", pack "l", stub->{num};
-				}
-				elsif(ref val) {
-					my objects = self->{objects};
-					my num = keys %objects;
-					objects->{num} = val;
-					warn "self->{role} add(num) =".Dumper(objects) if self->{warn} >= 2;
-					print pipe "B", pack "l", num;
-				}
-				elsif(!defined val) {
-					print pipe "U";	# undef
-				}
-				elsif((svref = svref_2object \val) && ((svref = svref->FLAGS) & B::SVp_IOK)) {	# integer
-					print pipe val == 1? "1": val == 0? "0": ("i", pack "l", val);
-				}
-				elsif(svref & B::SVp_POK) {		# string
-					_utf8_off(val) if is_utf8(val);
-					print pipe "s", pack("l", length val), val;
-				}
-				elsif(svref & B::SVp_NOK) {		# double
-					print pipe "n", pack "d", val;
-				}
-				else {	die "Значение неизвестного типа ".Devel::Peek::Dump(val)." val=`val`" }
-			}
-		}
+		lun.call data
 		
-		return self;
-	}
+		return self
 
 	# считывает структуру из потока ввода
-	def unpack {
-		(self) = @_;
-		pipe = self.{r};
+	def unpack 
+		pipe = @r
 		
-		objects = self.[objects};
-		(@is, len, arr, hash, key, val, replace_arr);
-		ret = [];
-		@st = [ret, 0, 0, 1];
+		replace_arr = nil
+		ret = []
+		st = [[ret, 0, 0, 1]]
 
-		while(@st) {
-			(arr, hash, key, len) = @{pop @st};
+		while st.length != 0
+			arr, hash, key, len = st.pop
 
-			while(len--) {
+			while len-- != 0
 
-				read pipe, _, 1 or die "Оборван поток ввода. !";
+				ch = pipe.getc
 				
-				if(_ eq "h") {
-					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
-					num = unpack "l", _;
-					val = is[num];
-				}
-				elsif(_ eq "H") { replace_arr = 1; val = {} }
-				elsif(_ eq "A") { replace_arr = 0; val = []; }
-				elsif(_ eq "S") {
-					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
-					val = objects.{unpack "l", _};
-				}
-				elsif(_ eq "B") {
-					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
-					val = self.stub(unpack "l", _);
-				}
-				elsif(_ eq "T") { val = utils::boolean::true }
-				elsif(_ eq "F") { val = utils::boolean::false }
-				elsif(_ eq "U") { val = undef }
-				elsif(_ eq "1") { val = 1 }
-				elsif(_ eq "0") { val = 0 }
-				elsif(_ eq "i") {
-					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
-					val = unpack "l", _;
-				}
-				elsif(_ eq "n") {		# double
-					die "Не 8 байт считано. !" if 8 != read pipe, _, 8;
-					val = unpack "d", _;
-				}
-				elsif(_ eq "s") {		# string
-					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
-					n = unpack "l", _;
-					die "Не n байт считано. !" if n != read pipe, val, n;
-				}
+				if ch == "h"
+					num = pipe.gets(4).unpack("l")[0]
+					val = is[num]
+				elsif ch == "H"
+					replace_arr = 1
+					val = {}
+				elsif ch == "A"
+					replace_arr = 0
+					val = []
+				elsif ch == "S"
+					val = @objects[pipe.gets(4).unpack("l")[0]]
+				elsif ch == "B"
+					val = self.stub(pipe.gets(4).unpack("l")[0])
+				elsif ch == "T"
+					val = true
+				elsif ch == "F"
+					val = false
+				elsif ch == "U"
+					val = nil
+				elsif ch == "1"
+					val = 1
+				elsif ch == "0"
+					val = 0
+				elsif ch == "i"		# integer
+					val = pipe.gets(4).unpack("l")[0]
+				elsif ch == "n"		# double
+					val = pipe.gets(8).unpack("d")[0]
+				elsif ch == "s"		# string
+					n = pipe.gets(4).unpack("l")[0]
+					val = pipe.gets(n)
+					if val.length != n
+						raise RPCException, "Неизвестный тип в потоке ввода"
+					end
+				else
+					raise RPCException, "Неизвестный тип в потоке ввода"
+				end
 				
-				if(hash) {
-					if(len % 2) { key = val }
-					else { arr.{key} = val }
-				}
-				else { push @arr, val }
+				if hash == 1
+					if len % 2 != 0
+						key = val
+					else 
+						arr[key] = val
+					end
+				else
+					arr.push val
+				end
 				
-				if(defined replace_arr) {
-					push @st, [arr, hash, key, len];
-					push @is, arr = val;
-					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
-					(hash, len) = (replace_arr, (replace_arr+1) * unpack "l", _);
-					replace_arr = undef;
-				}
-				
-			}
-		}
+				unless replace_arr.eq? nil
+					st.push [arr, hash, key, len]
+					arr = val
+					is.push arr
+					hash, len = replace_arr, (replace_arr+1) * pipe.gets(4).unpack("l")[0]
+					replace_arr = nil
+				end
+
+			end
+		end
 		
-		return ret.[0];
+		return ret[0]
 	}
 
 	# отправляет команду и получает ответ
@@ -238,96 +225,28 @@ class RPC
 	# создаёт экземпляр класса
 	def new_instance(name, *av)
 		self.reply("new", name, av, @wantarray)
-
-	
-	# превращает в json и сразу отправляет. Объекты складирует в self->objects
-	def pack(cmd, data)
-		pipe = @w
-		
-		ret = [data]
-		st = [ret]
-		
-		until st.length==0
-			ls = st.pop
-			for i, val in if ls.instance_of? Array then (0..ls.length - 1).to_a.zip(ls) else ls end
-				if val.instance_of? RPCstub
-					ls[i] = {@stub => val.num}
-				elsif [Hash, Array].include? val.class
-					st.push val
-				elsif not( [TrueClass, FalseClass, NilClass].include? val.class or val.is_a? Enumerable )
-					idx = @objects.length
-					ls[i] = {@bless => idx}
-					@objects[idx] = val
-				end
-			end
-		end
-		
-		data = ret[0]
-		
-		$stderr.puts "#{@role} -> #{cmd} #{JSON.dump(data)} #{@erase.to_s}\n" if @warn == 1
-		
-		pipe.puts "#{cmd}\n"
-		JSON.dump(data, pipe)
-		pipe.puts "\n#{@erase.join("\n")}\n"
-		pipe.flush
-		@erase = []
-		return self
-	end
-
-	# распаковывает
-	def unpack(data)
-
-		data = JSON.load(data)
-		
-		ret = [data]
-		st = [ret]
-		
-		until st.length == 0
-			ls = st.pop
-
-			if ls.instance_of? Hash
-				for i, val in ls
-					if val[@stub] != nil
-						ls[i] = self.stub(val[@stub])
-					elsif val[@bless] != nil 
-						ls[i] = @objects[val[@bless]]
-					elsif [Hash, Array].include? val
-						st.push val
-					end
-				end
-			else
-				for i, val in (0..ls.length - 1).to_a.zip(ls)
-					st.push val if [Hash, Array].include? val
-				end
-			end
-		end
-		
-		data = ret[0]
-
-		return data
 	end
 
 	# вызывает функцию
-	def call(name, *args)
-		self.pack("call #{name} #{@wantarray}", args).ret
+	def call(name, *av)
+		self.reply("call", name, av, @wantarray)
 	end
 
 	# вызывает метод
-	def apply(cls, name, *args)
-		self.pack("apply #{cls} #{name} #{@wantarray}", args).ret
+	def apply(cls, name, *av)
+		self.reply("apply", cls, name, av, @wantarray)
 	end
 
 	# выполняет код eval eval, args...
-	def eval(eval, *args)
-		args.unshift eval
-		self.pack("eval #{@wantarray}", args).ret
+	def eval(eval, *av)
+		self.reply("eval", eval, av, @wantarray)
 	end
 
 	# устанавливает warn на миноре
 	def warn(val)
 		val = val.to_i
 		@warn = val
-		self.pack("warn", val).ret
+		self.reply("warn", val)
 	end
 
 	# удаляет ссылки на объекты из objects
@@ -348,50 +267,50 @@ class RPC
 				end
 				return	# закрыт
 			end
-			ret = pipe.readline.rstrip
-			arg = pipe.readline.rstrip
-			nums = pipe.readline.rstrip
-			argnums = nums.split(",")
-			args = self.unpack(arg)
+			ret = self.unpack
+			nums = self.unpack
 
 			
 			if @warn == 1
-				$stderr.puts "#{@role} <- `#{ret}` #{arg} #{nums}\n"
+				$stderr.puts "#{@role} <- #{ret} #{nums}\n"
 			end
 			
-			if ret == "ok" 
-				self.erase(argnums)
-			elsif ret == "error"
-				self.erase(argnums)
+			cmd = ret.shift
+			
+			if cmd == "ok"
+				self.erase(nums)
+				break
+			elsif cmd == "error"
+				self.erase(nums)
 				raise RPCException, args, caller
 			end
 			
 			begin
-			
-				arg = ret.split(" ")
-				cmd = arg[0]
+
 				if cmd == "stub"
-					ret = @objects[arg[1]].send(arg[2], *args); 
+					num, name, args, wantarray = ret
+					ret = @objects[num].send(name, *args)
 					self.pack("ok", ret)
 				elsif cmd == "get"
-					prop = args[0];
-					ret = @objects[arg[1]].send prop
-					self.pack("ok", ret)
+					num, key = ret
+					self.pack("ok", @objects[num][key])
 				elsif cmd == "set"
-					prop = args[0]
-					@objects[arg[1]].send prop, args[1]
+					num, key, val = ret
+					@objects[num][key] = val
 					self.pack("ok", 1)
 				elsif cmd == "warn"
-					@warn = args
+					@warn = ret
 					self.pack("ok", 1)
 				elsif cmd == "apply"
-					ret = arg[1].send arg[2], *args
+					cls, name, args, wantarray = ret
+					ret = Kernel.send(cls).send(name, *args)
 					self.pack("ok", ret)
 				elsif cmd == "call"
-					ret = Kernel.send arg[1], *args
+					name, args, wantarray = ret
+					ret = Kernel.send(name, *args)
 					self.pack("ok", ret)
 				elsif cmd == "eval"
-					buf = args.shift
+					buf, args, wantarray = ret
 					ret = eval(buf)
 					self.pack("ok", ret)
 				else
@@ -400,7 +319,7 @@ class RPC
 			rescue SyntaxError, NameError, StandardError => e
 				self.pack("error", e.to_s)
 			end
-			self.erase(argnums)
+			self.erase(nums)
 		end
 
 		return args
@@ -411,6 +330,11 @@ class RPC
 		stub = RPCStub.new(self, num)
 		define_finalizer(stub, @finalizer)
 		return stub
+	end
+	
+	# возвращает wantarray
+	def wantarray
+		@wantarray
 	end
 	
 end
@@ -424,17 +348,20 @@ class RPCstub
 	end
 	
 	def method_missing(name, *param)
-		self.rpc.pack("stub #{@num} #{name} #{@rpc.wantarray}", param).ret
+		@rpc.reply("stub", @num, name, @rpc.wantarray, param)
 	end
 	
 	def [](key)
-		self.rpc.pack("get #{@num}", [key]).ret
+		self.rpc.reply("get", @num, key)
 	end
 	
 	def [](key, val)
-		self.rpc.pack("set #{@num}", [key, val]).ret
+		self.rpc.reply("set", @num, key, val)
 	end
 
+	def __num
+		@num
+	end
 	
 end
 
