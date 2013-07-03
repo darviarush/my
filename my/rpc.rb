@@ -2,9 +2,9 @@
 # encoding: UTF-8
 
 # gem install json
-require 'json'
 
 include ObjectSpace
+
 
 class RPC
 
