@@ -16,7 +16,7 @@ class RPC
 	]
 
 	# конструктор. Создаёт соединение
-	def initialize(prog = nil)
+	def initialize(prog = nil, r=nil, w=nil)
 		
 		@finalizer = proc do |id|
 			self.erase.push id
@@ -27,6 +27,13 @@ class RPC
 		@warn = 0
 		@erase = []
 		@wantarray = 1
+		
+		if prog == -1
+			@role = "TEST"
+			@r = r
+			@w = w
+			return
+		end
 	
 		if prog.equal?(nil)
 			return self.minor
@@ -46,8 +53,6 @@ class RPC
 
 		@r = reader
 		@w = writer
-		@bless = "\0bless\0"
-		@stub = "\0stub\0"
 		@role = "MAJOR"
 	end
 
@@ -64,17 +69,177 @@ class RPC
 		@r = IO.new(4, "rb")
 		@w = IO.new(5, "wb")
 
-		@bless = "\0stub\0"
-		@stub = "\0bless\0"
 		@role = "MINOR"
 
 		ret = self.ret
 		
 		$stderr.puts "MINOR ENDED #{ret}\n"
-		@object = []
+		@objects = []
 		return ret
 	end
 
+	# превращает в бинарный формат и сразу отправляет. Объекты складирует в $this->objects
+	def pack(data)
+		is = Hash.new
+		pipe = @w
+		
+		st = [[data]]
+		
+		while st.length != 0
+			arr = st.pop
+			i = st.pop
+			hash = arr.class == Hash
+
+			while(my(key, val) = hash? each %arr: each @arr) {
+				
+				if(hash) {
+					_utf8_off(key) if is_utf8(key);
+					print pipe "s", pack("l", length key), key;
+				}
+				
+				if(ref val eq "HASH") {
+					print(pipe "h", pack "l", n), next if defined(n = is{val});
+					my num = keys %is;
+					is{val} = num;
+					print pipe "H", pack "l", 0+keys(%val);
+					push @st, arr;
+					arr = val;
+					hash = 1;
+				}
+				elsif(ref val eq "ARRAY") {
+					print(pipe "h", pack "l", n), next if defined(n = is{val});
+					my num = keys %is;
+					is{val} = num;
+					print pipe "A", pack "l", 0+@val;
+					push @st, arr;
+					arr = val;
+					hash = 0;
+				}
+				elsif(ref val eq "utils::boolean") {
+					print pipe val? "T": "F";
+				}
+				elsif(ref val eq "rpc::stub") {
+					my stub = tied %val;
+					print pipe "S", pack "l", stub->{num};
+				}
+				elsif(ref val) {
+					my objects = self->{objects};
+					my num = keys %objects;
+					objects->{num} = val;
+					warn "self->{role} add(num) =".Dumper(objects) if self->{warn} >= 2;
+					print pipe "B", pack "l", num;
+				}
+				elsif(!defined val) {
+					print pipe "U";	# undef
+				}
+				elsif((svref = svref_2object \val) && ((svref = svref->FLAGS) & B::SVp_IOK)) {	# integer
+					print pipe val == 1? "1": val == 0? "0": ("i", pack "l", val);
+				}
+				elsif(svref & B::SVp_POK) {		# string
+					_utf8_off(val) if is_utf8(val);
+					print pipe "s", pack("l", length val), val;
+				}
+				elsif(svref & B::SVp_NOK) {		# double
+					print pipe "n", pack "d", val;
+				}
+				else {	die "Значение неизвестного типа ".Devel::Peek::Dump(val)." val=`val`" }
+			}
+		}
+		
+		return self;
+	}
+
+	# считывает структуру из потока ввода
+	def unpack {
+		(self) = @_;
+		pipe = self.{r};
+		
+		objects = self.[objects};
+		(@is, len, arr, hash, key, val, replace_arr);
+		ret = [];
+		@st = [ret, 0, 0, 1];
+
+		while(@st) {
+			(arr, hash, key, len) = @{pop @st};
+
+			while(len--) {
+
+				read pipe, _, 1 or die "Оборван поток ввода. !";
+				
+				if(_ eq "h") {
+					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
+					num = unpack "l", _;
+					val = is[num];
+				}
+				elsif(_ eq "H") { replace_arr = 1; val = {} }
+				elsif(_ eq "A") { replace_arr = 0; val = []; }
+				elsif(_ eq "S") {
+					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
+					val = objects.{unpack "l", _};
+				}
+				elsif(_ eq "B") {
+					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
+					val = self.stub(unpack "l", _);
+				}
+				elsif(_ eq "T") { val = utils::boolean::true }
+				elsif(_ eq "F") { val = utils::boolean::false }
+				elsif(_ eq "U") { val = undef }
+				elsif(_ eq "1") { val = 1 }
+				elsif(_ eq "0") { val = 0 }
+				elsif(_ eq "i") {
+					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
+					val = unpack "l", _;
+				}
+				elsif(_ eq "n") {		# double
+					die "Не 8 байт считано. !" if 8 != read pipe, _, 8;
+					val = unpack "d", _;
+				}
+				elsif(_ eq "s") {		# string
+					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
+					n = unpack "l", _;
+					die "Не n байт считано. !" if n != read pipe, val, n;
+				}
+				
+				if(hash) {
+					if(len % 2) { key = val }
+					else { arr.{key} = val }
+				}
+				else { push @arr, val }
+				
+				if(defined replace_arr) {
+					push @st, [arr, hash, key, len];
+					push @is, arr = val;
+					die "Не 4 байта считано. !" if 4 != read pipe, _, 4;
+					(hash, len) = (replace_arr, (replace_arr+1) * unpack "l", _);
+					replace_arr = undef;
+				}
+				
+			}
+		}
+		
+		return ret.[0];
+	}
+
+	# отправляет команду и получает ответ
+	def reply(*av)
+		$stderr.puts "#{@role} #{cmd} #{ret}" if @warn
+		self.pack(av).pack(@nums)
+		@nums = []
+		self.ret
+	}
+
+	# отправляет ответ
+	def ok(ret, cmd = "ok")
+		$stderr.puts "#{@role} #{cmd} #{ret}" if @warn
+		self.pack([cmd, ret]).pack(@nums)
+		@nums = []
+		return self
+
+	# создаёт экземпляр класса
+	def new_instance(name, *av)
+		self.reply("new", name, av, @wantarray)
+
+	
 	# превращает в json и сразу отправляет. Объекты складирует в self->objects
 	def pack(cmd, data)
 		pipe = @w

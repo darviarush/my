@@ -1,8 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# локаль
+import sys
+reload(sys)
+sys.setdefaultencoding("utf-8")
 
-import os, sys, shlex, json
+import os, shlex, json
 from collections import Iterator
 
 from pprint import pprint

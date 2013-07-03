@@ -86,7 +86,7 @@ sub minor {
 
 
 
-# превращает в бинарный формат и сразу отправляет
+# превращает в бинарный формат и сразу отправляет. Объекты складирует в $this->objects
 sub pack {
 	my ($self, $data) = @_;
 	local ($_, $,, $\) = ();
@@ -104,23 +104,23 @@ sub pack {
 			
 			if($hash) {
 				_utf8_off($key) if is_utf8($key);
-				print $pipe "s", pack("L", length $key), $key;
+				print $pipe "s", pack("l", length $key), $key;
 			}
 			
 			if(ref $val eq "HASH") {
-				print($pipe "h", pack "L", $n), next if defined($n = $is{$val});
+				print($pipe "h", pack "l", $n), next if defined($n = $is{$val});
 				my $num = keys %is;
 				$is{$val} = $num;
-				print $pipe "H", pack "L", 0+keys(%$val);
+				print $pipe "H", pack "l", 0+keys(%$val);
 				push @st, $arr;
 				$arr = $val;
 				$hash = 1;
 			}
 			elsif(ref $val eq "ARRAY") {
-				print($pipe "h", pack "L", $n), next if defined($n = $is{$val});
+				print($pipe "h", pack "l", $n), next if defined($n = $is{$val});
 				my $num = keys %is;
 				$is{$val} = $num;
-				print $pipe "A", pack "L", 0+@$val;
+				print $pipe "A", pack "l", 0+@$val;
 				push @st, $arr;
 				$arr = $val;
 				$hash = 0;
@@ -130,7 +130,7 @@ sub pack {
 			}
 			elsif(ref $val eq "rpc::stub") {
 				my $stub = tied %$val;
-				print $pipe "S", pack "L", $stub->{num};
+				print $pipe "S", pack "l", $stub->{num};
 			}
 			elsif(ref $val) {
 				my $objects = $self->{objects};
@@ -147,7 +147,7 @@ sub pack {
 			}
 			elsif($svref & B::SVp_POK) {		# string
 				_utf8_off($val) if is_utf8($val);
-				print $pipe "s", pack("L", length $val), $val;
+				print $pipe "s", pack("l", length $val), $val;
 			}
 			elsif($svref & B::SVp_NOK) {		# double
 				print $pipe "n", pack "d", $val;
@@ -180,18 +180,18 @@ sub unpack {
 			
 			if($_ eq "h") {
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				my $num = unpack "L", $_;
+				my $num = unpack "l", $_;
 				$val = $is[$num];
 			}
 			elsif($_ eq "H") { $replace_arr = 1; $val = {} }
 			elsif($_ eq "A") { $replace_arr = 0; $val = []; }
 			elsif($_ eq "S") {
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				$val = $objects->{unpack "L", $_};
+				$val = $objects->{unpack "l", $_};
 			}
 			elsif($_ eq "B") {
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				$val = $self->stub(unpack "L", $_);
+				$val = $self->stub(unpack "l", $_);
 			}
 			elsif($_ eq "T") { $val = $utils::boolean::true }
 			elsif($_ eq "F") { $val = $utils::boolean::false }
@@ -208,7 +208,7 @@ sub unpack {
 			}
 			elsif($_ eq "s") {		# string
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				my $n = unpack "L", $_;
+				my $n = unpack "l", $_;
 				die "Не $n байт считано. $!" if $n != read $pipe, $val, $n;
 			}
 			
@@ -222,7 +222,7 @@ sub unpack {
 				push @st, [$arr, $hash, $key, $len];
 				push @is, $arr = $val;
 				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				($hash, $len) = ($replace_arr, ($replace_arr+1) * unpack "L", $_);
+				($hash, $len) = ($replace_arr, ($replace_arr+1) * unpack "l", $_);
 				$replace_arr = undef;
 			}
 			
@@ -236,21 +236,26 @@ sub unpack {
 sub reply {
 	my $self = shift;
 	warn "$self->{role} -> ".Dumper(\@_) if $self->{warn};
-	$self->pack(\@_)->pack($self->{nums})->ret
+	$self->pack(\@_)->pack($self->{nums});
+	$self->{nums} = [];
+	$self->ret
 }
 
 # отправляет ответ
 sub ok {
 	my ($self, $ret, $cmd) = @_;
-	warn "$self->{role} -> ".Dumper([$cmd // "ok", $ret]) if $self->{warn};
-	$self->pack([$cmd // "ok", $ret])->pack($self->{nums});
+	$cmd //= "ok";
+	warn "$self->{role} -> ".Dumper([$cmd, $ret]) if $self->{warn};
+	$self->pack([$cmd, $ret])->pack($self->{nums});
+	$self->{nums} = [];
+	return $self;
 }
 
 # создаёт экземпляр класса
-sub create {
+sub new_instance {
 	my $self = shift;
 	my $class = shift;
-	$self->reply("create", $class, \@_, wantarray);
+	$self->reply("new", $class, \@_, wantarray);
 }
 
 # вызывает функцию $rpc->call($name, @args)
@@ -331,7 +336,7 @@ sub ret {
 				$self->{warn} = $ret->[0];
 				$self->ok(1);
 			}
-			elsif($cmd eq "apply" or $cmd eq "create" and do {splice $ret, 1, 0, "new"; 1}) {
+			elsif($cmd eq "apply" or $cmd eq "new" and do {splice $ret, 1, 0, "new"; 1}) {
 				my ($class, $name, $args, $wantarray) = @$ret;
 				if($wantarray) { @ret = $class->$name(@$args); $self->ok(\@ret) }
 				else { $self->ok(scalar $class->$name(@$args)) }

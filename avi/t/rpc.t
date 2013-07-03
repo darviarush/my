@@ -73,6 +73,9 @@ $cgi = $rpc->apply("CGI", "new");
 $h1 = $cgi->h1('hello world');
 is($h1, '<h1>hello world</h1>');
 
+$cgi = $rpc->new_instance("CGI");
+$h1 = $cgi->h1('hello world');
+is($h1, '<h1>hello world</h1>');
 
 $header = $cgi->header;
 is($header, "Content-Type: text/html; charset=ISO-8859-1\r\n\r\n");

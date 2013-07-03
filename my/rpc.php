@@ -16,8 +16,15 @@ class RPC {
 	# конструктор. Создаёт соединение
 	function __construct($prog = null, $r = null, $w = null) {
 	
+		$this->prog = $prog;
+	
 		if($prog === null) return $this->minor();
-		if($prog === -1) return 
+		if($prog === -1) {
+			$this->r = $r;
+			$this->w = $w;
+			$this->role = "TEST";
+			return;
+		}
 		
 		$descriptorspec = array(
 			4 => array("pipe", "rb"),	// это канал, из которого потомок будет читать
@@ -37,9 +44,6 @@ class RPC {
 		$this->process = $process;
 		$this->r = $pipe[5];
 		$this->w = $pipe[4];
-		$this->prog = $prog;
-		$this->bless = "\0bless\0";
-		$this->stub = "\0stub\0";
 		$this->role = "MAJOR";
 	}
 
@@ -61,9 +65,6 @@ class RPC {
 		
 		$this->r = $r;
 		$this->w = $w;
-		$this->prog = $prog;
-		$this->bless = "\0stub\0";
-		$this->stub = "\0bless\0";
 		$this->role = "MINOR";
 
 		$ret = $this->ret();
@@ -71,78 +72,181 @@ class RPC {
 		if($this->warn) fprintf(STDERR, "MINOR ENDED %s\n", $ret);
 		return $ret;
 	}
-
-	# превращает в json и сразу отправляет. Объекты складирует в $this->objects
-	function pack($cmd, $data) {
+	
+	# превращает в бинарный формат и сразу отправляет. Объекты складирует в $this->objects
+	function pack($data) {
+	
+		function is_assoc($val) {
+			if(!is_array($val)) return false;
+			return array_keys($val) == range(0, count($val)-1);
+		}
+	
 		$pipe = $this->w;
 		
-		$fn = function(&$val, $key) {
-			if($val instanceof RPCstub) $val = array($this->stub => $val->num);
-			else if(is_object($val)) {
-				$this->objects[] = $val;
-				$val = array($this->bless => count($this->objects)-1);
+		$is = array();
+		$st = array(array($data), 0);
+		
+		while($st) {
+			$hash = array_pop($st);
+			$arr = array_pop($st);
+
+			while(list($key, $val) = each($arr)) {
+				
+				#foreach(($hash? array($key, $val): array($val)) as $val) {
+				
+					echo "$key		".gettype($val)."=$val\n";
+				
+					if(is_array($val)) {
+						if(in_array($val, $is, true)) fwrite($pipe, "h".pack("l", $n));
+						
+						$is_assoc = is_assoc($val);
+						
+						$is[] = $val;
+						fwrite($pipe, ($is_assoc? "H": "A").pack("l", count($val)));
+						$st []= $arr;
+						$st []= $hash;
+						$arr = $val;
+						$hash = $is_assoc;
+					}
+					else if($val === true) fwrite($pipe, "T");
+					else if($val === false) fwrite($pipe, "F");
+					else if($val === null) fwrite($pipe, "U");
+					else if(is_object($val)) {
+						if(get_class($val) == "RPCstub") fwrite($pipe, "S".pack("l", $val->__num));
+						else {
+							$num = count($this->objects);
+							$this->objects[$num] = $val;
+							if($this->warn >= 2) fwrite(STDERR, $this->role." add($num) =".print_r($objects, true));
+							fwrite($pipe, "B".pack("l", $num));
+						}
+					}
+					else if(is_int($val)) fwrite($pipe, $val === 1? "1": $val === 0? "0": "i".pack("l", $val));
+					else if(is_string($val)) fwrite($pipe, "s".pack("l", strlen($val)).$val);
+					else if(is_float($val)) fwrite($pipe, "n".pack("d", $val));
+					else throw new RPCException("Значение неизвестного типа ".var_dump($val)." val=`$val`");
+				#}
 			}
-		};
+		}
 		
-		if(is_array($data)) array_walk_recursive($data, $fn);
-		else $fn($data, 0);
-		
-		$json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
-		
-		if($this->warn) fprintf(STDERR, "%s -> `%s` %s %s\n", $this->role, $cmd, $json, implode(",", $this->erase));
-		
-		fwrite($pipe, "$cmd\n");
-		fwrite($pipe, $json);
-		fwrite($pipe, "\n");
-		fwrite($pipe, implode("\n", $this->erase)."\n");
-		flush($pipe);
-		$this->erase = array();
 		return $this;
 	}
 
-	# распаковывает
-	function unpack($data) {
-
-		$data = json_decode($data, true);
+	# считывает структуру из потока ввода
+	function unpack() {
+		$pipe = $this->r;
 		
-		if(!is_array($data)) return $data;
-		
-		$st = array(&$data);
+		$ret = array();
+		$st = array(&$ret, 0, 0, 1);
 
-		for($i=0; $st; $i++) {
-			$val = &$st[$i];
-			
-			if(isset($val[$this->stub])) $val = $this->stub($val[$this->stub]);
-			elseif(isset($val[$this->bless])) $val = $this->objects[$val[$this->bless]];
-			else foreach($val as &$x) if(is_array($x)) $st []= &$x;
-			
-			unset($st[$i]);
+		while($st) {
+			$arr = &$st[count($st)-1][0];
+			list($tmp, $hash, $key, $len) = array_pop($st);
+
+			while($len--) {
+
+				$_ = fread($pipe, 1); if(!$_) throw new RPCException("Оборван поток ввода.");
+				
+				if($_ == "h") {
+					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
+					$num = unpack("l", $_);
+					$val = $is[$num];
+				}
+				else if($_ == "H") { $replace_arr = 1; $val = array(); }
+				else if($_ == "A") { $replace_arr = 0; $val = array(); }
+				else if($_ == "S") {
+					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
+					$val = $this->objects[unpack("l", $_)];
+				}
+				else if($_ == "B") {
+					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
+					$val = new RPCStub(unpack("l", $_));
+				}
+				else if($_ == "T") $val = true;
+				else if($_ == "F") $val = false;
+				else if($_ == "U") $val = null;
+				else if($_ == "1") $val = 1;
+				else if($_ == "0") $val = 0;
+				else if($_ == "i") {
+					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
+					$val = unpack("l", $_);
+				}
+				else if($_ == "n") {		# double
+					$_ = fread($pipe, 8); if(strlen($_) != 8) throw new RPCException("Не 8 байт считано.");
+					$val = unpack("d", $_);
+				}
+				else if($_ == "s") {		# string
+					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
+					$n = unpack("l", $_);
+					$_ = fread($pipe, $n); if(strlen($_) != $n) throw new RPCException("Не $n байта считано.");
+				}
+				
+				if($hash) {
+					if($len % 2) $key = $val;
+					else $arr[$key] = $val;
+				}
+				else $arr[] = $val;
+				
+				if($replace_arr === null) {
+					$st []= array(&$arr, $hash, $key, $len);
+					$arr = &$val;
+					$is []= &$arr;
+					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
+					$len = ($replace_arr+1) * unpack("l", $_);
+					$hash = $replace_arr;
+					$replace_arr = null;
+				}
+				
+			}
 		}
-		#if($this->warn) fprintf(STDERR, "%s data=%s", $this->role, print_r($data, true));
-		return $data;
+		
+		return $ret[0];
 	}
 
+	# отправляет команду и получает ответ
+	function reply() {
+		$args = func_get_args();
+		if($self->warn) fwrite(STDERR, $this->role." -> ".print_r($args, true));
+		$self->pack($args)->pack($self->nums);
+		$self->nums = array();
+		return $self->ret();
+	}
+
+	# отправляет ответ
+	function ok($ret, $cmd = "ok") {
+		if($self->warn) fwrite(STDERR, $self->role." -> ".print_r(array($cmd, $ret), true));
+		$self->pack(array($cmd, $ret))->pack($self->nums);
+		$self->nums = array();
+		return $this;
+	}
+
+	
+	# создаёт экземпляр класса
+	function new_instance($class) {
+		$args = func_get_args(); array_shift($args);
+		$self->reply("new", $class, $args, $this->wantarray);
+	}
+	
 	# вызывает функцию
 	function call($name) {
 		$args = func_get_args(); array_shift($args);
-		return $this->pack("call $name ".$this->wantarray, $args)->ret();
+		return $this->reply("call", $name, $args, $this->wantarray);
 	}
 
 	# вызывает метод
 	function apply($class, $name) {
 		$args = func_get_args(); array_shift($args); array_shift($args);
-		return $this->pack("apply $class $name ".$this->wantarray, $args)->ret();
+		return $this->reply("apply", $class, $name, $args, $this->wantarray);
 	}
 
 	# выполняет код eval $eval, $args...
 	function _eval() {
-		return $this->pack("eval ".$this->wantarray, func_get_args())->ret();
+		return $this->reply("eval", func_get_args(), $this->wantarray);
 	}
 
 	# устанавливает warn на миноре
 	function warn($val) {
 		$this->warn = $val+=0;
-		return $this->pack("warn", $val)->ret();
+		return $this->reply("warn", $val);
 	}
 
 	# удаляет ссылки на объекты из objects
@@ -159,83 +263,85 @@ class RPC {
 				if($this->warn) fprintf(STDERR, "%s closed: %s\n", $this->role, implode("\n", debug_backtrace()));
 				return;	# закрыт
 			}
-			$ret = rtrim(fgets($pipe));
-			$arg = rtrim(fgets($pipe));
-			$nums = rtrim(fgets($pipe));
-			$argnums = explode(",", $nums);
-			$args = $this->unpack($arg);
+			$ret = $this->unpack();
+			$nums = $this->unpack();
 
 			
-			if($this->warn) fprintf(STDERR, "%s <- `%s` %s %s\n", $this->role, $ret, $arg, $nums);
+			if($this->warn) fprintf(STDERR, "%s <- %s %s\n", $this->role, print_r($ret, true), $nums);
 			
-			if($ret == "ok") { $this->erase($argnums); break; }
-			if($ret == "error") { $this->erase($argnums); throw new RPCException($args); }
+			$cmd = array_shift($ret);
+			
+			if($cmd == "ok") { $this->erase($nums); $args = $ret[0]; break; }
+			if($cmd == "error") { $this->erase($nums); throw new RPCException($ret[0]); }
 			
 			try {
 			
-				$arg = explode(" ", $ret);
-				$cmd = $arg[0];
 				if($cmd == "stub") {
-					$ret = call_user_func_array(array($this->objects[$arg[1]], $arg[2]), $args); 
-					$this->pack("ok", $ret);
+					list($num, $name, $args, $wantarray) = $ret;
+					$ret = call_user_func_array(array($this->objects[$num], $name), $args); 
+					$this->ok($ret);
 				}
 				else if($cmd == "get") {
-					$prop = $args[0];
-					$ret = $this->objects[$arg[1]]->$prop; 
-					$this->pack("ok", $ret);
+					list($num, $key) = $ret;
+					$this->ok($this->objects[$num]->$key);
 				}
 				else if($cmd == "set") {
-					$prop = $args[0];
-					$this->objects[$arg[1]]->$prop = $args[1];
-					$this->pack("ok", 1);
+					list($num, $key, $val) = $ret;
+					$this->objects[$num]->$key = $val;
+					$this->ok(1);
 				}
 				else if($cmd == "warn") {
-					$this->warn = $args;
-					$this->pack("ok", 1);
+					$this->warn = $ret[0];
+					$this->ok(1);
+				}
+				elseif($cmd == "new") {
+					list($class, $args, $wantarray) = $ret;
+					$ret = new $class($args); 
+					$this->ok($ret);
 				}
 				elseif($cmd == "apply") {
-					$ret = call_user_func_array(array($arg[1], $arg[2]), $args); 
-					$this->pack("ok", $ret);
+					list($class, $name, $args, $wantarray) = $ret;
+					$ret = call_user_func_array(array($class, $name), $args); 
+					$this->ok($ret);
 				}
 				elseif($cmd == "call") {
-					$ret = call_user_func_array($arg[1], $args); 
-					$this->pack("ok", $ret);
+					list($name, $args, $wantarray) = $ret;
+					$ret = call_user_func_array($name, $args); 
+					$this->ok($ret);
 				}
 				elseif($cmd == "eval") {
-					$buf = array_shift($args);
-					$ret = eval($buf);
+					list($eval, $args, $wantarray) = $ret;
+					$ret = eval($eval);
 					if ( $ret === false && ( $error = error_get_last() ) )
 						throw new RPCException("Ошибка в eval: ".$error['type']." ".$error['message']." at ".$error['file'].":".$error['line']);
 
-					$this->pack("ok", $ret);
+					$this->ok($ret);
 				}
 				else {
 					throw new RPCException("Неизвестная команда `$cmd`");
 				}
 			} catch(Exception $e) {
-				$this->pack("error", $e->getMessage());
+				$this->pack($e->getMessage(), "error");
 			}
-			$this->erase($argnums);
+			$this->erase($nums);
 		}
 
 		return $args;
 	}
 
-	# создаёт заглушку, для удалённого объекта
-	function stub($num) {
-		$stub = new RPCStub();
-		$stub->num = $num;
-		$stub->rpc = $this;
-		return $stub;
-	}
 }
 
 # заглушка
 class RPCstub {
-	public $num, $rpc;
+	public $__num, $__rpc;
+	
+	function __construct($num) {
+		$this->__num = $num;
+		$this->__rpc = $this;
+	}
 	
 	function __call($name, $param) {
-		return $this->rpc->pack("stub ".$this->num." $name ".$this->rpc->wantarray, $param)->ret();
+		return $this->__rpc->reply("stub", $this->__num, $name, $param, $this->__rpc->wantarray, $param);
 	}
 
 	/*static function __callStatic($name, $param) {
@@ -243,15 +349,19 @@ class RPCstub {
 	}*/
 	
 	function __get($key) {
-		return $this->rpc->pack("get ".$this->num, array($key))->ret();
+		return $this->__rpc->reply("get", $this->__num, $key);
 	}
 	
 	function __set($key, $val) {
-		$this->rpc->pack("set ".$this->num, array($key, $val))->ret();
+		$this->__rpc->reply("set", $this->__num, $key, $val);
 	}
 	
 	function __destruct() {
-		$this->rpc->erase[] = $self->num;
+		$this->__rpc->erase[] = $self->__num;
+	}
+	
+	function __toString() {
+		return "RPCstub(".$this->num.")";
 	}
 }
 
