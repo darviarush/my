@@ -1,5 +1,14 @@
 <?php
 
+function is_assoc(&$val) {
+	if(!is_array($val)) return false;
+	if(is_string(key($val))) return true;
+	$keys = array_keys($val);
+	sort($keys, SORT_NUMERIC);
+	if(is_string($keys[0]) || is_string($keys[1])) return true;
+	return $keys != range(0, count($val)-1);
+}
+
 class RPC {
 
 	static $PROG = array(
@@ -76,22 +85,15 @@ class RPC {
 	# превращает в бинарный формат и сразу отправляет. Объекты складирует в $this->objects
 	function pack($data) {
 	
-		function is_assoc($val) {
-			if(!is_array($val)) return false;
-			return array_keys($val) == range(0, count($val)-1);
-		}
-	
 		$pipe = $this->w;
 		
 		$is = array();
-		$st = array(array(&$data), 0);
+		$st = array(array($data), 0);
 		
 		while($st) {
 			$hash = array_pop($st);
-			$arr = &$st[count($st)-1];
+			$arr = $st[count($st)-1];
 			array_pop($st);
-			
-			echo "arr cur = ".current($arr)."\n";
 			
 			while(list($key, $val) = each($arr)) {
 				
@@ -102,15 +104,20 @@ class RPC {
 					echo "$key		".gettype($val)."=$val\n";
 				
 					if(is_array($val)) {
-						if($n = in_array($val, $is, true)) fwrite($pipe, "h".pack("l", $n));
+						if($n = in_array($val, $is)) {
+							fwrite($pipe, "h".pack("l", $n));
+							continue;
+						}
+						
 						$is[] = $val;
 						
 						$is_assoc = is_assoc($val);
 						
 						fwrite($pipe, ($is_assoc? "H": "A").pack("l", count($val)));
 						#reset($arr);
-						$st []= &$arr;
+						$st []= $arr;
 						$st []= $hash;
+
 						$arr = $val;
 						$hash = $is_assoc;
 					}

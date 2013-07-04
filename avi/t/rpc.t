@@ -1,4 +1,4 @@
-use Test::More tests => 24;
+use Test::More tests => 25;
 
 use Carp 'verbose';
 $SIG{ __DIE__ } = *Carp::confess;

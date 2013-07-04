@@ -214,7 +214,7 @@ def unpack (self):
 
 # отправляет команду и получает ответ
 def reply self = shift;
-	warn "self.{role} . ".Dumper(\@_) if self.{warn};
+	if self.warn warn "self.{role} . ".Dumper(\@_)
 	self.pack(\@_).pack(self.{nums});
 	self.{nums} = [];
 	self.ret
