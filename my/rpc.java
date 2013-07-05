@@ -28,10 +28,21 @@ class Stub {
 		this.num = num;
 	}
 	
-	
+	// вызывает удалённый метод
 	public Variant call(String name, Variant[] args) {
 	}
 	
+	// возвращает удалённое свойство
+	public Variant get(String name) {
+	}
+	
+	// устанавливает удалённое свойство
+	public Variant set(String name, Variant val) {
+	}
+
+	// регистрирует номер заглушки, для сообщения об освобождении памяти
+	protected void finalize() throws Throwable {
+	}
 
 }
 
@@ -40,7 +51,12 @@ class Stub {
 class Variant {
 	
 	public int toInt() {
-		// Integer.parseInt("1");
+		if(this instanceof IntVariant) return ((IntVariant) this).i;
+		if(this instanceof StringVariant) return Integer.parseInt(((StringVariant) this).s);
+		if(this instanceof DoubleVariant) return (int)((DoubleVariant) this).d;
+		if(this instanceof BooleanVariant) return ((BooleanVariant) this).b? 1: 0;
+
+		throw new VariantException("Невозможно сконвертировать в integer");
 	}
 	
 	public String toString() {
@@ -68,21 +84,50 @@ class Variant {
 			return s + "}";
 		}
 		
-		//throw new VariantException("Невозможно сконвертировать в строку");
+		
 	}
 	
-	public double toDouble() {}
-	public boolean toBool() {}
+	public double toDouble() {
+		if(this instanceof IntVariant)		return (double)((IntVariant) this).i;
+		if(this instanceof StringVariant)	return Double.parseFloat(((StringVariant) this).s);
+		if(this instanceof DoubleVariant)	return ((DoubleVariant) this).d;
+		if(this instanceof BooleanVariant)	return ((BooleanVariant) this).b? 1.0: 0.0;
+
+		throw new VariantException("Невозможно сконвертировать в double");
+	}
+	
+	public boolean toBool() {
+		if(this instanceof IntVariant)		return ((IntVariant) this).i != 0;
+		if(this instanceof StringVariant)	return ((StringVariant) this).s.length() != 0;
+		if(this instanceof DoubleVariant)	return ((DoubleVariant) this).d != 0.0;
+		if(this instanceof BooleanVariant)	return ((BooleanVariant) this).b;
+		if(this instanceof NullVariant)		return false;
+		if(this instanceof ArrayVariant)	return ((ArrayVariant) this).a.length() != 0;
+		if(this instanceof HashVariant)		return ((HashVariant) this).h.length() != 0;
+		
+		throw new VariantException("Невозможно сконвертировать в boolean");
+	}
+	
 	public boolean isNull() { return this instanceof NullVariant; }
+
+	// возвращет элемент массива или хеша
+	public Variant at(int i) {}
+	public Variant at(String i) {}
+	public Variant at(Variant i) {}
+	
+	// устанавливает элемент массива или хеша
+	public Variant put(int i, Variant val) {}
+	public Variant put(String i, Variant val) {}
+	public Variant put(Variant i, Variant val) {}
 	
 }
 
-class IntVariant		extends Variant {	public int					i;	}
-class StringVariant		extends Variant {	public String				s;	}
-class DoubleVariant		extends Variant {	public double				d;	}
-class BooleanVariant	extends Variant {	public boolean				b;	}
-class NullVariant		extends Variant {									}
-class StubVariant		extends Variant {	public Stub t;					}
-class ObjectVariant		extends Variant {	public Object o;				}
-class ArrayVariant		extends Variant {	public Variant[]			a;	}
-class HashVariant		extends Variant {	public Map<String, Variant>	h;	}
+class IntVariant		extends Variant {	public int					i;	public IntVariant(int i)					{ this.i = i; }	}
+class StringVariant		extends Variant {	public String				s;	public StringVariant(String s)				{ this.s = s; }	}
+class DoubleVariant		extends Variant {	public double				d;	public DoubleVariant(double d)				{ this.d = d; }	}
+class BooleanVariant	extends Variant {	public boolean				b;	public BooleanVariant(boolean b)			{ this.b = b; }	}
+class NullVariant		extends Variant {																								}
+class StubVariant		extends Variant {	public Stub					t;	public StubVariant(Stub t)					{ this.t = t; }	}
+class ObjectVariant		extends Variant {	public Object				o;	public ObjectVariant(Object o)				{ this.o = o; }	}
+class ArrayVariant		extends Variant {	public Variant[]			a;	public ArrayVariant(Variant[] a = [])		{ this.a = a; }	}
+class HashVariant		extends Variant {	public Map<String, Variant>	h;	public HashVariant(Map<String, Variant>	h)	{ this.h = h; }	}
