@@ -1,5 +1,6 @@
 <?php
 
+# проверяет - является ли массив ассоциативным
 function is_assoc(&$val) {
 	if(!is_array($val)) return false;
 	if(is_string(key($val))) return true;
@@ -7,6 +8,21 @@ function is_assoc(&$val) {
 	sort($keys, SORT_NUMERIC);
 	if(is_string($keys[0]) || is_string($keys[1])) return true;
 	return $keys != range(0, count($val)-1);
+}
+
+function array_dump($a) {
+	$s = array();
+	if(is_assoc($a)) {
+		foreach($a as $k=>$v) $s []= "$k: ".array_dump($v);
+	} elseif(is_array($a)) {
+		foreach($a as $v) $s []= array_dump($v);
+	} elseif(is_string($a)) return "'$a'";
+	elseif($a === true) return "true";
+	elseif($a === false) return "false";
+	elseif($a === null) return "null";
+	else return $a;
+	
+	return "[".implode(", ", $s)."]";
 }
 
 class RPC {
@@ -18,7 +34,7 @@ class RPC {
 		"ruby" => "ruby -I'%s' -e 'require \"rpc.rb\"; RPC.new'"
 	);
 
-	public $r, $w, $objects = array(), $prog, $role, $process, $wantarray = 1, $erase = array(), $warn = 0;
+	public $r, $w, $objects = array(), $prog, $role, $process, $wantarray = 1, $erase, $warn = 0;
 
 
 
@@ -58,7 +74,7 @@ class RPC {
 
 	# закрывает соединение
 	function close() {
-		fwrite($this->w, "ok\nnull\n");
+		$this->ok(null);
 		fclose($this->r);
 		fclose($this->w);
 		proc_close($this->process);
@@ -78,7 +94,7 @@ class RPC {
 
 		$ret = $this->ret();
 		
-		if($this->warn) fprintf(STDERR, "MINOR ENDED %s\n", $ret);
+		if($this->warn) fprintf(STDERR, "MINOR ENDED %s\n", array_dump($ret));
 		return $ret;
 	}
 	
@@ -97,146 +113,139 @@ class RPC {
 			
 			while(list($key, $val) = each($arr)) {
 				
-				if($hash) fwrite($pipe, "s".pack("l", strlen($key)).$key);
-				
-				#foreach(($hash? array($key, $val): array($val)) as $val) {
-				
-					echo "$key		".gettype($val)."=$val\n";
-				
-					if(is_array($val)) {
-						if($n = in_array($val, $is)) {
-							fwrite($pipe, "h".pack("l", $n));
-							continue;
-						}
-						
-						$is[] = $val;
-						
-						$is_assoc = is_assoc($val);
-						
-						fwrite($pipe, ($is_assoc? "H": "A").pack("l", count($val)));
-						#reset($arr);
-						$st []= $arr;
-						$st []= $hash;
+				if($hash) fwrite($pipe, is_int($key)? ($key == 0? "0": ($key == 1? "1": "i".pack("l", $key))): "s".pack("l", strlen($key)).$key);
+			
+				if(is_array($val)) {
+					if($n = in_array($val, $is)) {
+						fwrite($pipe, "h".pack("l", $n));
+						continue;
+					}
+					
+					$is[] = $val;
+					
+					$is_assoc = is_assoc($val);
+					
+					fwrite($pipe, ($is_assoc? "H": "A").pack("l", count($val)));
+					#reset($arr);
+					$st []= $arr;
+					$st []= $hash;
 
-						$arr = $val;
-						$hash = $is_assoc;
+					$arr = $val;
+					$hash = $is_assoc;
+				}
+				else if($val === true) fwrite($pipe, "T");
+				else if($val === false) fwrite($pipe, "F");
+				else if($val === null) fwrite($pipe, "U");
+				else if(is_object($val)) {
+					if($val instanceof RPCstub) fwrite($pipe, "S".pack("l", $val->__num));
+					else {
+						$num = count($this->objects);
+						$this->objects[$num] = $val;
+						if($this->warn >= 2) fwrite(STDERR, $this->role." add($num) = ".array_dump($objects)."\n");
+						fwrite($pipe, "B".pack("l", $num));
 					}
-					else if($val === true) fwrite($pipe, "T");
-					else if($val === false) fwrite($pipe, "F");
-					else if($val === null) fwrite($pipe, "U");
-					else if(is_object($val)) {
-						if($val instanceof RPCstub) fwrite($pipe, "S".pack("l", $val->__num));
-						else {
-							$num = count($this->objects);
-							$this->objects[$num] = $val;
-							if($this->warn >= 2) fwrite(STDERR, $this->role." add($num) =".print_r($objects, true));
-							fwrite($pipe, "B".pack("l", $num));
-						}
-					}
-					else if(is_int($val)) fwrite($pipe, $val === 1? "1": $val === 0? "0": "i".pack("l", $val));
-					else if(is_string($val)) fwrite($pipe, "s".pack("l", strlen($val)).$val);
-					else if(is_float($val)) fwrite($pipe, "n".pack("d", $val));
-					else throw new RPCException("Значение неизвестного типа ".var_dump($val)." val=`$val`");
-				#}
+				}
+				else if(is_int($val)) fwrite($pipe, $val === 1? "1": ($val === 0? "0": "i".pack("l", $val)));
+				else if(is_string($val)) fwrite($pipe, "s".pack("l", strlen($val)).$val);
+				else if(is_float($val)) fwrite($pipe, "n".pack("d", $val));
+				else throw new RPCException("Значение неизвестного типа ".var_dump($val)." val=`$val`");
 			}
 		}
+		
+		flush($pipe);
 		
 		return $this;
 	}
 
+	# считывает указанное кол. байт. Статическая
+	function read($n) {
+		if(is_string($n)) {
+			$i = $n == "d"? 8: 4;
+			$val = fread($this->r, $i);
+			if(strlen($val) != $i) throw new RPCException("Не $i байт считано.");
+			return current(unpack($n, $val));
+		}
+		
+		$val = fread($this->r, $n);
+		if(strlen($val) != $n) throw new RPCException("Не $n байт считано.");	
+		return $val;
+	}
+	
 	# считывает структуру из потока ввода
 	function unpack() {
-		$pipe = $this->r;
-		
-		$ret = array();
-		$st = array(&$ret, 0, 0, 1);
 
-		while($st) {
-			$arr = &$st[count($st)-1][0];
-			list($tmp, $hash, $key, $len) = array_pop($st);
+		$st = array();
+		$arr = array();
+		$hash = 0;
+		$len = 1;
 
+		for(;;) {
+			
 			while($len--) {
 
-				$_ = fread($pipe, 1); if(!$_) throw new RPCException("Оборван поток ввода.");
-				
-				if($_ == "h") {
-					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$num = unpack("l", $_);
-					$val = $is[$num];
-				}
-				else if($_ == "H") { $replace_arr = 1; $val = array(); }
-				else if($_ == "A") { $replace_arr = 0; $val = array(); }
-				else if($_ == "S") {
-					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$val = $this->objects[unpack("l", $_)];
-				}
-				else if($_ == "B") {
-					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$val = $this->stub(unpack("l", $_));
-				}
+				$_ = $this->read(1);
+
+				if($_ == "i") $val = $this->read("l");
+				else if($_ == "s") $val = $this->read($this->read("l"));
+				else if($_ == "0") $val = 0;
+				else if($_ == "1") $val = 1;
+				else if($_ == "n") $val = $this->read("d");				
+				else if($_ == "S") $val = $this->objects[$this->read("l")];
+				else if($_ == "B") $val = $this->stub($this->read("l"));
 				else if($_ == "T") $val = true;
 				else if($_ == "F") $val = false;
 				else if($_ == "U") $val = null;
-				else if($_ == "1") $val = 1;
-				else if($_ == "0") $val = 0;
-				else if($_ == "i") {
-					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$val = unpack("l", $_);
+				else if($_ == "H" || $_ == "A") { 
+					$st []= array($arr, $hash, $key, $len);
+					$arr = array();
+					$is []= &$arr;
+					$len = $this->read("l");
+					if($_ == "H") { $len *= 2; $hash = 1; } else $hash = 0;
+					continue;
 				}
-				else if($_ == "n") {		# double
-					$_ = fread($pipe, 8); if(strlen($_) != 8) throw new RPCException("Не 8 байт считано.");
-					$val = unpack("d", $_);
-				}
-				else if($_ == "s") {		# string
-					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$n = unpack("l", $_);
-					$_ = fread($pipe, $n); if(strlen($_) != $n) throw new RPCException("Не $n байта считано.");
-				}
+				else if($_ == "h") $val = $is[$this->read("l")];
+				else throw new RPCException("Неизвестный формат в командном потоке: `$_`");
 				
 				if($hash) {
-					if($len % 2) $key = $val;
-					else $arr[$key] = $val;
+					if($len % 2) $key = $val; else $arr[$key] = $val;
 				}
 				else $arr[] = $val;
-				
-				if($replace_arr === null) {
-					$st []= array(&$arr, $hash, $key, $len);
-					$arr = &$val;
-					$is []= &$arr;
-					$_ = fread($pipe, 4); if(strlen($_) != 4) throw new RPCException("Не 4 байта считано.");
-					$len = ($replace_arr+1) * unpack("l", $_);
-					$hash = $replace_arr;
-					$replace_arr = null;
-				}
-				
 			}
+			
+			if(!$st) break;
+			
+			$val = $arr;
+			$arr = &$st[count($st)-1][0];
+			list($tmp, $hash, $key, $len) = array_pop($st);
+			
+			if($hash) $arr[$key] = $val;
+			else $arr[] = $val;
 		}
 		
-		return $ret[0];
+		return $arr[0];
 	}
 
 	# отправляет команду и получает ответ
 	function reply() {
 		$args = func_get_args();
-		if($self->warn) fwrite(STDERR, $this->role." -> ".print_r($args, true));
-		$self->pack($args)->pack($self->nums);
-		$self->nums = array();
-		return $self->ret();
+		if($this->warn) fwrite(STDERR, $this->role." -> ".array_dump($args)."\n");
+		$this->pack($args)->pack($this->nums);
+		$this->nums = null;
+		return $this->ret();
 	}
 
 	# отправляет ответ
 	function ok($ret, $cmd = "ok") {
-		if($self->warn) fwrite(STDERR, $self->role." -> ".print_r(array($cmd, $ret), true));
-		$self->pack(array($cmd, $ret))->pack($self->nums);
-		$self->nums = array();
+		if($this->warn) fwrite(STDERR, $this->role." -> $cmd ".array_dump($ret)."\n");
+		$this->pack(array($cmd, $ret))->pack($this->nums);
+		$this->nums = null;
 		return $this;
 	}
 
-	
 	# создаёт экземпляр класса
 	function new_instance($class) {
 		$args = func_get_args(); array_shift($args);
-		$self->reply("new", $class, $args, $this->wantarray);
+		$this->reply("new", $class, $args, $this->wantarray);
 	}
 	
 	# вызывает функцию
@@ -252,8 +261,9 @@ class RPC {
 	}
 
 	# выполняет код eval $eval, $args...
-	function _eval() {
-		return $this->reply("eval", func_get_args(), $this->wantarray);
+	function _eval($eval) {
+		$args = func_get_args(); array_shift($args);
+		return $this->reply("eval", $eval, $args, $this->wantarray);
 	}
 
 	# устанавливает warn на миноре
@@ -264,7 +274,7 @@ class RPC {
 
 	# удаляет ссылки на объекты из objects
 	function erase($nums) {
-		foreach($nums as $num) unset($this->objects[$num]);
+		if($nums) foreach($nums as $num) unset($this->objects[$num]);
 	}
 	
 	# получает и возвращает данные и устанавливает ссылочные параметры
@@ -280,7 +290,7 @@ class RPC {
 			$nums = $this->unpack();
 
 			
-			if($this->warn) fprintf(STDERR, "%s <- %s %s\n", $this->role, print_r($ret, true), $nums);
+			if($this->warn) fprintf(STDERR, "%s <- %s %s\n", $this->role, array_dump($ret), array_dump($nums));
 			
 			$cmd = array_shift($ret);
 			
@@ -334,7 +344,7 @@ class RPC {
 					throw new RPCException("Неизвестная команда `$cmd`");
 				}
 			} catch(Exception $e) {
-				$this->pack($e->getMessage(), "error");
+				$this->ok($e->getMessage(), "error");
 			}
 			$this->erase($nums);
 		}
@@ -345,8 +355,8 @@ class RPC {
 	# создаёт заглушку
 	function stub($num) {
 		$stub = new RPCstub;
-		$stub->__num = $num;
 		$stub->__rpc = $this;
+		$stub->__num = $num;
 		return $stub;
 	}
 
@@ -355,7 +365,8 @@ class RPC {
 # заглушка
 class RPCstub {
 	public $__num, $__rpc;
-		
+	
+	
 	function __call($name, $param) {
 		return $this->__rpc->reply("stub", $this->__num, $name, $param, $this->__rpc->wantarray, $param);
 	}
@@ -373,7 +384,7 @@ class RPCstub {
 	}
 	
 	function __destruct() {
-		$this->__rpc->erase[] = $self->__num;
+		$this->__rpc->erase[] = $this->__num;
 	}
 	
 	function __toString() {

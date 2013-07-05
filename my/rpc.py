@@ -8,6 +8,7 @@ sys.setdefaultencoding("utf-8")
 
 import os, shlex, json
 from collections import Iterator
+from struct import pack, unpack
 
 from pprint import pprint
 
@@ -73,179 +74,158 @@ class RPC:
 		return ret
 
 	# превращает в бинарный формат и сразу отправляет. Объекты складирует в this.objects
-def pack (self, data):
-	IS = {}
-	pipe = self.w
-	
-	st = [[data]]
-	
-	while st:
-		arr = st.pop
-		hash = arr.__class__ == dict
-		arr = arr.iteritems() if hash else arr = enumerate(arr)
+	def pack (self, data):
+		IS = {}
+		pipe = self.w
 		
-		for a in arr:
+		st = [[data]]
+		
+		while st:
+			arr = st.pop
+			hash = isinstance(arr, dict)
+			arr = arr.iteritems() if hash else arr = ( for arr)
 			
-			for val in ([] if hash else a):
-			
-			if(ref val eq "HASH") {
-				pipe.write("h", pack "l", n), next if defined(n = is{val});
-				num = keys %is;
-				is{val} = num;
-				pipe.write("H", pack "l", 0+keys(%val);
-				push @st, arr;
-				arr = val;
-				hash = 1;
-			}
-			elif(ref val eq "ARRAY") {
-				pipe.write("h", pack "l", n), next if defined(n = is{val});
-				num = keys %is;
-				is{val} = num;
-				pipe.write("A", pack "l", 0+@val;
-				push @st, arr;
-				arr = val;
-				hash = 0;
-			}
-			elif(ref val eq "utils::boolean") {
-				pipe.write(val? "T": "F";
-			}
-			elif(ref val eq "rpc::stub") {
-				stub = tied %val;
-				pipe.write("S", pack "l", stub.{num};
-			}
-			elif(ref val) {
-				objects = self.{objects};
-				num = keys %objects;
-				objects.{num} = val;
-				warn "self.{role} add(num) =".Dumper(objects) if self.{warn} >= 2;
-				pipe.write("B", pack "l", num;
-			}
-			elif(!defined val) {
-				pipe.write("U";	# undef
-			}
-			elif((svref = svref_2object \val) && ((svref = svref.FLAGS) & B::SVp_IOK)) {	# integer
-				pipe.write(val == 1? "1": val == 0? "0": ("i", pack "l", val);
-			}
-			elif(svref & B::SVp_POK) {		# string
-				_utf8_off(val) if is_utf8(val);
-				pipe.write("s", pack("l", length val), val;
-			}
-			elif(svref & B::SVp_NOK) {		# double
-				pipe.write("n", pack "d", val;
-			}
-			else {	die "Значение неизвестного типа ".Devel::Peek::Dump(val)." val=`val`" }
-		}
-	}
-	
-	return self;
-}
+			for a in arr:
+				for val in a:
+				
+					if isinstance(val, (dict, list, tuple)):
+						hash = isinstance(val, dict)
+						n = IS.get(val)
+						if n is not None:
+							pipe.write("h" + pack("l", n))
+							continue
+						num = len(IS)
+						IS[val] = num
+						pipe.write(("H" if hash else "A") + pack("l", len(val))
+						st.append(arr)
+						arr = val
+					elif val is True:
+						pipe.write("T")
+					elif val is False:
+						pipe.write("F")
+					elif val is None:
+						pipe.write("U")
+					elif isinstance(val, RPCstub):
+						rpc, num = stub.__dict__["rpc.num"]
+						pipe.write("S"+pack("l", num))
+					elif type(val) is int:	# integer
+						pipe.write("1" if val is 1 else "0" if val is 0 else ("i", pack "l", val))
+					elif type(val) is str:		# string
+						pipe.write("s" + pack("l", len(val)) + val)
+					elif type(val) is float:		# double
+						pipe.write("n" + pack("d", val))
+					else:
+						objects = self.objects
+						num = len(objects)
+						objects[num] = val
+						if self.warn >= 2: 
+							sys.stderr.write("%s add(%i) =" % (self.role, num) )
+							pprint(objects) 
+						pipe.write("B"+pack("l", num)
+					
+					#else:	die "Значение неизвестного типа ".Devel::Peek::Dump(val)." val=`val`"
+					
+		return self
 
-# считывает структуру из потока ввода
-def unpack (self):
-	pipe = self.{r};
-	
-	local (_, /) = ();
-	
-	objects = self.{objects};
-	(@is, len, arr, hash, key, val, replace_arr);
-	ret = [];
-	@st = [ret, 0, 0, 1];
+	# считывает структуру из потока ввода
+	def unpack (self):
+		pipe = self.r
+		
+		objects = self.objects
+		ret = []
+		st = [[ret, 0, 0, 1]]
 
-	while(@st) {
-		(arr, hash, key, len) = @{pop @st};
+		while st:
+			arr, hash, key, len = st.pop()
 
-		while(len--) {
+			while len--:
 
-			pipe.read(1) or die "Оборван поток ввода. !";
-			
-			if(ch == "h") {
-				die "Не 4 байта считано. !" if 4 != pipe.read(4);
-				num = unpack "l", _;
-				val = is[num];
-			}
-			elif(ch == "H") { replace_arr = 1; val = {} }
-			elif(ch == "A") { replace_arr = 0; val = []; }
-			elif(ch == "S") {
-				die "Не 4 байта считано. !" if 4 != pipe.read(4);
-				val = objects.{unpack "l", _};
-			}
-			elif(ch == "B") {
-				die "Не 4 байта считано. !" if 4 != pipe.read(4);
-				val = self.stub(unpack "l", _);
-			}
-			elif(ch == "T") { val = utils::boolean::true }
-			elif(ch == "F") { val = utils::boolean::false }
-			elif(ch == "U") { val = undef }
-			elif(ch == "1") { val = 1 }
-			elif(ch == "0") { val = 0 }
-			elif(ch == "i") {
-				die "Не 4 байта считано. !" if 4 != pipe.read(4);
-				val = unpack "l", _;
-			}
-			elif(ch == "n") {		# double
-				die "Не 8 байт считано. !" if 8 != pipe.read(8);
-				val = unpack "d", _;
-			}
-			elif(ch == "s") {		# string
-				die "Не 4 байта считано. !" if 4 != pipe.read(4);
-				n = unpack "l", _;
-				die "Не n байт считано. !" if n != read pipe, val, n;
-			}
-			
-			if(hash) {
-				if(len % 2) { key = val }
-				else { arr.{key} = val }
-			}
-			else { push @arr, val }
-			
-			if(defined replace_arr) {
-				push @st, [arr, hash, key, len];
-				push @is, arr = val;
-				die "Не 4 байта считано. !" if 4 != pipe.read(4);
-				(hash, len) = (replace_arr, (replace_arr+1) * unpack "l", _);
-				replace_arr = undef;
-			}
-			
-		}
-	}
-	
-	return ret.[0];
-}
+				v = pipe.read(1)
+				if 1 != len(v): raise RPCException("Не 1 байт считан.")
+				
+				if ch == "h":
+					v = pipe.read(4)
+					if 4 != len(v): raise RPCException("Не 4 байта считано.")
+					num = unpack("l", v)
+					val = IS[num]
+				elif ch == "H":	replace_arr = 1; val = {}
+				elif ch == "A": replace_arr = 0; val = []
+				elif ch == "S":
+					v = pipe.read(4))
+					if 4 != len(v): raise RPCException("Не 4 байта считано.")
+					val = objects[unpack("l", v)]
+				elif ch == "B":
+					v = pipe.read(4)
+					if 4 != len(v): raise RPCException("Не 4 байта считано.")
+					val = self.stub(unpack("l", v))
+				elif ch == "T": val = True
+				elif ch == "F": val = False
+				elif ch == "U": val = None
+				elif ch == "1": val = 1
+				elif ch == "0": val = 0
+				elif ch == "i":
+					v = pipe.read(4)
+					if 4 != len(v): raise RPCException("Не 4 байта считано.")
+					val = unpack "l", _
+				elif ch == "n":		# double
+					v = pipe.read(8)
+					if 8 != len(v): raise RPCException("Не 8 байт считано.")
+					val = unpack("d", v);
+				elif ch == "s":		# string
+					v = pipe.read(4)
+					if 4 != len(v): raise RPCException("Не 4 байта считано.")
+					n = unpack("l", v)
+					v = pipe.read(n)
+					if n != len(v): raise RPCException("Не %i байта считано." % n)
+				
+				if hash:
+					if len % 2:
+						key = val
+					else: 
+						arr.key = val
+				else:
+					arr.append(val)
+				
+				if replace_arr is not None:
+					st.append( [arr, hash, key, len] )
+					arr = val
+					IS.append(arr)
+					v = pipe.read(4)
+					if 4 != len(v): raise RPCException("Не 4 байта считано.")
+					hash, len = replace_arr, (replace_arr+1) * unpack("l", v)
+					replace_arr = None
+		return ret[0]
 
-# отправляет команду и получает ответ
-def reply self = shift;
-	if self.warn warn "self.{role} . ".Dumper(\@_)
-	self.pack(\@_).pack(self.{nums});
-	self.{nums} = [];
-	self.ret
-}
 
-# отправляет ответ
-def ok (self, ret, cmd):
-	cmd //= "ok";
-	warn "self.{role} . ".Dumper([cmd, ret]) if self.{warn};
-	self.pack([cmd, ret]).pack(self.{nums});
-	self.{nums} = [];
-	return self;
-}
+	# отправляет команду и получает ответ
+	def reply(self, *av):
+		if self.warn: sys.stderr.write("%s -> %s %s\n" % (self.role, av))
+		self.pack(av).pack(self.nums)
+		self.nums = []
+		return self.ret()
 
-# создаёт экземпляр класса
-def new_instance self = shift;
-	class = shift;
-	self.reply("new", class, \@_, wantarray);
+	# отправляет ответ
+	def ok (self, ret, cmd="ok"):
+		if self.warn: sys.stderr.write("%s -> %s %s\n" % (self.role, cmd, repr(ret)))
+		self.pack([cmd, ret]).pack(self.nums)
+		self.nums = []
+		return self
 
+	# создаёт экземпляр класса
+	def new_instance(self, Class, *av):
+		return self.reply("new", Class, av, wantarray)
 
 	# вызывает функцию
 	def call(self, name, *av):
-		return self.pack("call %s %i" % (name, self.wantarray), av).ret()
+		return self.reply("call", name, av, self.wantarray)
 
 	# вызывает метод
 	def apply(self, cls, name, *av):
-		return self.pack("apply %s %s %i" % (cls, name, self.wantarray), av).ret()
+		return self.reply("apply", cls, name, av, self.wantarray)
 
 	# выполняет код eval eval, args...
-	def eval(self, *av):
-		return self.pack("eval %i" % self.wantarray, av).ret()
+	def eval(self, evl, *av):
+		return self.reply("eval", evl, av, self.wantarray)
 
 	# устанавливает warn на миноре
 	def warn(self, val):
@@ -255,37 +235,31 @@ def new_instance self = shift;
 
 	# удаляет ссылки на объекты из objects
 	def erase(self, nums):
-			for num in nums: del self.objects[num]
+		for num in nums: del self.objects[num]
 	
 	# получает и возвращает данные и устанавливает ссылочные параметры
 	def ret(self):
-		pipe = self.r
 		
 		while 1:	# клиент послал запрос
 			try:
-				ret = pipe.readline()[:-1]
-				arg = pipe.readline()[:-1]
-				nums = pipe.readline()[:-1]
+				ret = self.unpack()
+				nums = self.unpack()
 			except EOFError as e:
 				if self.warn: sys.stderr.write("%s closed\n" % self.role)
 				return		# закрыт
 
-			argnums = [i for i in nums.split(",") if i!='']
-			args = self.unpack(arg)
-
-			if self.warn: sys.stderr.write("%s <- `%s` %s %s\n" % (self.role, ret, arg, nums));
+			if self.warn: sys.stderr.write("%s <- %s %s\n" % (self.role, repr(ret), repr(nums)));
 			
 			if ret == "ok":
-				self.erase(argnums)
+				self.erase(nums)
 				break
 			if ret == "error":
-				self.erase(argnums)
-				raise RPCException(args)
+				self.erase(nums)
+				raise RPCException(ret)
 			
 			try:
-				arg = ret.split(" ")
-				cmd = arg[0]
 				if cmd == "stub":
+					
 					ret = getattr(self.objects[arg[1]], arg[2])(*args)
 					self.pack("ok", ret)
 				elif cmd == "get":

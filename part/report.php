@@ -164,6 +164,7 @@ echo $qbe->errorHTML();
 <?php
 
 $this->widget('application.extensions.EFlot.EFlotGraphWidget', array(
+	'id' => 'chart',
 	'data'=> $qbe->chartData(),
 	'options'=> array(
 		'series' => array(
@@ -180,6 +181,19 @@ echo $qbe->errorHTML();
 
 ?>
 
+<style>
+.triangle {
+position: absolute;
+width: 0;
+height: 0;
+border-top: 50px solid white;
+border-right: 10px solid transparent;
+-webkit-transform: skew(-30deg);
+-moz-transform: skew(-30deg);
+-o-transform: skew(-30deg);
+}
+</style>
+
 <script>
 
 function newCount() {
@@ -195,10 +209,39 @@ function formatLabel(lab, series) {
 	return Math.round(series.percent*100)/100 + "% " + lab
 }
 
-$("#interactive").bind("plothover", function(event, pos, item) {
+var charttip, chartarr, chartprev
+$("#chart").bind("plothover", function(event, pos, item) {
 	//item.series.label
+	//if(chartprev == item.series.label) return;
+	chartprev = item.series.label
+	if(!charttip) {
+		charttip = $("<div></div>").appendTo('#chart').css('position', 'absolute').css('text-align', 'center').width(200).height(50).css("background-color", "white").fadeTo(0, 0.8).css("border", "3px solid white")
+		chartarr = $("<div></div>").addClass('triangle').appendTo('#chart').fadeTo(0, 0.8)
+	}
+	//console.log("plothover="+item.series.label+" pos="+pos.pageX+' startAngle='+startAngle, item)
+	var offset = $(this).offset()
+	var x = pos.pageX - offset.left
+	var y = pos.pageY - offset.top - charttip.height()
+	charttip.css("left", x).css("top", y-56).html(item.series.label)
+	chartarr.css("left", x+13).css("top", y)
 })
-//$("#interactive").bind("plotclick", pieClick);
+//$("#chart").bind("plotclick", pieClick);
+
+$("#chart").mouseenter(function() {
+	console.log("chart in")
+	if(charttip) {
+		charttip.show()
+		chartarr.show()
+	}
+})
+
+$("#chart").mouseleave(function() {
+	console.log("chart hide")
+	charttip.hide()
+	chartarr.hide()
+})
+
+
 </script>
 
 

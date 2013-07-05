@@ -107,27 +107,16 @@ sub pack {
 				print $pipe "s", pack("l", length $key), $key;
 			}
 			
-			if(ref $val eq "HASH") {
+			if(my $val_hash = ref $val eq "HASH" or ref $val eq "ARRAY") {
 				print($pipe "h", pack "l", $n), next if defined($n = $is{$val});
 				my $num = keys %is;
 				$is{$val} = $num;
-				print $pipe "H", pack "l", 0+keys(%$val);
+				print $pipe $val_hash? ("H", pack "l", 0+keys(%$val)): ("A", pack "l", 0+@$val);
 				push @st, $arr;
 				$arr = $val;
-				$hash = 1;
+				$hash = $val_hash;
 			}
-			elsif(ref $val eq "ARRAY") {
-				print($pipe "h", pack "l", $n), next if defined($n = $is{$val});
-				my $num = keys %is;
-				$is{$val} = $num;
-				print $pipe "A", pack "l", 0+@$val;
-				push @st, $arr;
-				$arr = $val;
-				$hash = 0;
-			}
-			elsif(ref $val eq "utils::boolean") {
-				print $pipe $val? "T": "F";
-			}
+			elsif(ref $val eq "utils::boolean") { print $pipe $val? "T": "F" }
 			elsif(ref $val eq "rpc::stub") {
 				my $stub = tied %$val;
 				print $pipe "S", pack "l", $stub->{num};
@@ -139,9 +128,7 @@ sub pack {
 				warn "$self->{role} add($num) =".Dumper($objects) if $self->{warn} >= 2;
 				print $pipe "B", pack "l", $num;
 			}
-			elsif(!defined $val) {
-				print $pipe "U";	# undef
-			}
+			elsif(!defined $val) { print $pipe "U" }
 			elsif(($svref = svref_2object \$val) && (($svref = $svref->FLAGS) & B::SVp_IOK)) {	# integer
 				print $pipe $val == 1? "1": $val == 0? "0": ("i", pack "l", $val);
 			}
@@ -157,6 +144,19 @@ sub pack {
 	}
 	
 	return $self;
+}
+
+# считывает указанное количество байт
+sub read {
+	my ($self, $n) = @_;
+	read $self->{r}, my $buf, $n or die "Оборван поток ввода. $!";
+	return $buf;
+}
+
+# считывает и распаковывает
+sub readf {
+	my ($self, $fmt) = @_;
+	unpack $fmt, $self->read($fmt eq "d"? 8: 4);
 }
 
 # считывает структуру из потока ввода
@@ -176,41 +176,22 @@ sub unpack {
 
 		while($len--) {
 
-			read $pipe, $_, 1 or die "Оборван поток ввода. $!";
+			$_ = $self->read(1);
 			
-			if($_ eq "h") {
-				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				my $num = unpack "l", $_;
-				$val = $is[$num];
-			}
+			if($_ eq "h") {	$val = $is[$self->readf("l")] }
 			elsif($_ eq "H") { $replace_arr = 1; $val = {} }
 			elsif($_ eq "A") { $replace_arr = 0; $val = []; }
-			elsif($_ eq "S") {
-				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				$val = $objects->{unpack "l", $_};
-			}
-			elsif($_ eq "B") {
-				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				$val = $self->stub(unpack "l", $_);
-			}
+			elsif($_ eq "S") { $val = $objects->{$self->readf("l")} }
+			elsif($_ eq "B") { $val = $self->stub($self->readf("l")) }
 			elsif($_ eq "T") { $val = $utils::boolean::true }
 			elsif($_ eq "F") { $val = $utils::boolean::false }
 			elsif($_ eq "U") { $val = undef }
 			elsif($_ eq "1") { $val = 1 }
 			elsif($_ eq "0") { $val = 0 }
-			elsif($_ eq "i") {
-				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				$val = unpack "l", $_;
-			}
-			elsif($_ eq "n") {		# double
-				die "Не 8 байт считано. $!" if 8 != read $pipe, $_, 8;
-				$val = unpack "d", $_;
-			}
-			elsif($_ eq "s") {		# string
-				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				my $n = unpack "l", $_;
-				die "Не $n байт считано. $!" if $n != read $pipe, $val, $n;
-			}
+			elsif($_ eq "i") { $val = $self->readf("l") }
+			elsif($_ eq "n") { $val = $self->readf("d") }
+			elsif($_ eq "s") { $val = $self->read($self->readf("l")) }
+			else { die "Неизвестный формат в командном потоке: `$_`" }
 			
 			if($hash) {
 				if($len % 2) { $key = $val }
@@ -221,8 +202,7 @@ sub unpack {
 			if(defined $replace_arr) {
 				push @st, [$arr, $hash, $key, $len];
 				push @is, $arr = $val;
-				die "Не 4 байта считано. $!" if 4 != read $pipe, $_, 4;
-				($hash, $len) = ($replace_arr, ($replace_arr+1) * unpack "l", $_);
+				($hash, $len) = ($replace_arr, ($replace_arr+1) * $self->readf("l"));
 				$replace_arr = undef;
 			}
 			
