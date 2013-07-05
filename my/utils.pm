@@ -444,6 +444,18 @@ sub write_test {
 	close $f;
 }
 
+# дампит в одну строку
+sub array_dump {
+	local ($_) = @_;
+	if(ref $_ eq "ARRAY") { return "[".join(", ", map {array_dump($_)} @$_)."]" }
+	elsif(ref $_ eq "HASH") { my $i = 0; my $key; return "{".join(", " , map { $i%2? do{ $key=$_; () }: "$key: ".array_dump($_) } %$_)."}" }
+	elsif(ref $_) { return $_; }
+	elsif(!defined $_) { return "null"; }
+	elsif(!/^-?\d+(?:\.\d+)?\z/) { return "'$_'"; }
+	else { return $_; }
+}
+
+
 # читает весь файл
 sub read {
 	my ($path) = @_;

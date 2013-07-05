@@ -215,7 +215,7 @@ sub unpack {
 # отправляет команду и получает ответ
 sub reply {
 	my $self = shift;
-	warn "$self->{role} -> ".Dumper(\@_) if $self->{warn};
+	warn "$self->{role} -> ".utils::array_dump(\@_) if $self->{warn};
 	$self->pack(\@_)->pack($self->{nums});
 	$self->{nums} = [];
 	$self->ret
@@ -225,7 +225,7 @@ sub reply {
 sub ok {
 	my ($self, $ret, $cmd) = @_;
 	$cmd //= "ok";
-	warn "$self->{role} -> ".Dumper([$cmd, $ret]) if $self->{warn};
+	warn "$self->{role} -> $cmd ".utils::array_dump($ret) if $self->{warn};
 	$self->pack([$cmd, $ret])->pack($self->{nums});
 	$self->{nums} = [];
 	return $self;
@@ -284,12 +284,12 @@ sub ret {
 	
 	for(;;) {	# клиент послал запрос
 		$ret = $self->unpack;
-		$self->{warn} && warn("$self->{role} closed: ".Dumper([caller(1)])), 
+		$self->{warn} && warn("$self->{role} closed: ".utils::array_dump([caller(1)])), 
 		return unless defined $ret and ref $ret;	# закрыт канал
 	
 		my $nums = $self->unpack;
 		
-		warn "$self->{role} <- ".Dumper($ret)."\n" if $self->{warn};
+		warn "$self->{role} <- ".utils::array_dump($ret)." ".utils::array_dump($nums)."\n" if $self->{warn};
 		
 		my $cmd = shift @$ret;
 		
