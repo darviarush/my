@@ -17,7 +17,7 @@ import java;
 class RPC {
 }
 
-// заглушка
+// Р·Р°РіР»СѓС€РєР°
 class Stub {
 	
 	public RPC rpc;
@@ -28,26 +28,26 @@ class Stub {
 		this.num = num;
 	}
 	
-	// вызывает удалённый метод
+	// РІС‹Р·С‹РІР°РµС‚ СѓРґР°Р»С‘РЅРЅС‹Р№ РјРµС‚РѕРґ
 	public Variant call(String name, Variant[] args) {
 	}
 	
-	// возвращает удалённое свойство
+	// РІРѕР·РІСЂР°С‰Р°РµС‚ СѓРґР°Р»С‘РЅРЅРѕРµ СЃРІРѕР№СЃС‚РІРѕ
 	public Variant get(String name) {
 	}
 	
-	// устанавливает удалённое свойство
+	// СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ СѓРґР°Р»С‘РЅРЅРѕРµ СЃРІРѕР№СЃС‚РІРѕ
 	public Variant set(String name, Variant val) {
 	}
 
-	// регистрирует номер заглушки, для сообщения об освобождении памяти
+	// СЂРµРіРёСЃС‚СЂРёСЂСѓРµС‚ РЅРѕРјРµСЂ Р·Р°РіР»СѓС€РєРё, РґР»СЏ СЃРѕРѕР±С‰РµРЅРёСЏ РѕР± РѕСЃРІРѕР±РѕР¶РґРµРЅРёРё РїР°РјСЏС‚Рё
 	protected void finalize() throws Throwable {
 	}
 
 }
 
 
-// Вариантный тип
+// Р’Р°СЂРёР°РЅС‚РЅС‹Р№ С‚РёРї
 class Variant {
 	
 	public int toInt() {
@@ -56,7 +56,7 @@ class Variant {
 		if(this instanceof DoubleVariant) return (int)((DoubleVariant) this).d;
 		if(this instanceof BooleanVariant) return ((BooleanVariant) this).b? 1: 0;
 
-		throw new VariantException("Невозможно сконвертировать в integer");
+		throw new VariantException("РќРµРІРѕР·РјРѕР¶РЅРѕ СЃРєРѕРЅРІРµСЂС‚РёСЂРѕРІР°С‚СЊ РІ integer");
 	}
 	
 	public String toString() {
@@ -93,7 +93,7 @@ class Variant {
 		if(this instanceof DoubleVariant)	return ((DoubleVariant) this).d;
 		if(this instanceof BooleanVariant)	return ((BooleanVariant) this).b? 1.0: 0.0;
 
-		throw new VariantException("Невозможно сконвертировать в double");
+		throw new VariantException("РќРµРІРѕР·РјРѕР¶РЅРѕ СЃРєРѕРЅРІРµСЂС‚РёСЂРѕРІР°С‚СЊ РІ double");
 	}
 	
 	public boolean toBool() {
@@ -105,17 +105,17 @@ class Variant {
 		if(this instanceof ArrayVariant)	return ((ArrayVariant) this).a.length() != 0;
 		if(this instanceof HashVariant)		return ((HashVariant) this).h.length() != 0;
 		
-		throw new VariantException("Невозможно сконвертировать в boolean");
+		throw new VariantException("РќРµРІРѕР·РјРѕР¶РЅРѕ СЃРєРѕРЅРІРµСЂС‚РёСЂРѕРІР°С‚СЊ РІ boolean");
 	}
 	
 	public boolean isNull() { return this instanceof NullVariant; }
 
-	// возвращет элемент массива или хеша
+	// РІРѕР·РІСЂР°С‰РµС‚ СЌР»РµРјРµРЅС‚ РјР°СЃСЃРёРІР° РёР»Рё С…РµС€Р°
 	public Variant at(int i) {}
 	public Variant at(String i) {}
 	public Variant at(Variant i) {}
 	
-	// устанавливает элемент массива или хеша
+	// СѓСЃС‚Р°РЅР°РІР»РёРІР°РµС‚ СЌР»РµРјРµРЅС‚ РјР°СЃСЃРёРІР° РёР»Рё С…РµС€Р°
 	public Variant put(int i, Variant val) {}
 	public Variant put(String i, Variant val) {}
 	public Variant put(Variant i, Variant val) {}
