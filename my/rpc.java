@@ -108,12 +108,31 @@ class Variant {
 		throw new VariantException("Невозможно сконвертировать в boolean");
 	}
 	
-	public boolean isNull() { return this instanceof NullVariant; }
+	public boolean isInt()		{ return this instanceof IntVariant;		}
+	public boolean isString()	{ return this instanceof StringVariant;		}
+	public boolean isDouble()	{ return this instanceof DoubleVariant;		}
+	public boolean isBool()		{ return this instanceof BooleanVariant;	}
+	public boolean isNull()		{ return this instanceof NullVariant;		}
+	public boolean isStub()		{ return this instanceof StubVariant;		}
+	public boolean isObject()	{ return this instanceof ObjectVariant;		}
+	public boolean isArray()	{ return this instanceof ArrayVariant;		}
+	public boolean isHash()		{ return this instanceof HashVariant;		}
 
 	// возвращет элемент массива или хеша
-	public Variant at(int i) {}
-	public Variant at(String i) {}
-	public Variant at(Variant i) {}
+	public Variant at(int i) {
+		if(this instanceof ArrayVariant) return ((ArrayVariant) this).a[i];
+		if(this instanceof HashVariant) return ((HashVariant) this).h[Integer.toString(i)];
+		throw new RPCException("Это не массив");
+	}
+	public Variant at(String i) {
+		if(this instanceof HashVariant) return ((HashVariant) this).h[i];
+		throw new RPCException("Это не ассоциативный массив");
+	}
+	public Variant at(Variant i) {
+		if(this instanceof ArrayVariant) return ((ArrayVariant) this).a[i];
+		if(this instanceof HashVariant) return ((HashVariant) this).h[i];
+		throw new RPCException("Это не ассоциативный массив");
+	}
 	
 	// устанавливает элемент массива или хеша
 	public Variant put(int i, Variant val) {}
@@ -131,3 +150,6 @@ class StubVariant		extends Variant {	public Stub					t;	public StubVariant(Stub 
 class ObjectVariant		extends Variant {	public Object				o;	public ObjectVariant(Object o)				{ this.o = o; }	}
 class ArrayVariant		extends Variant {	public Variant[]			a;	public ArrayVariant(Variant[] a = [])		{ this.a = a; }	}
 class HashVariant		extends Variant {	public Map<String, Variant>	h;	public HashVariant(Map<String, Variant>	h)	{ this.h = h; }	}
+
+
+class RPCException extends Exception {}
