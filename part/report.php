@@ -74,7 +74,6 @@ foreach($qbe->columnSlice() as $slice) {
 				'showAnim'=>'fold',
 				'open' => 'js: function(event, ui) {
 					var x = $(this)
-					
 					setTimeout(function() {
 						var ul = x.data("autocomplete").menu.activeMenu
 						ul.find("li").each(function() { 
@@ -218,11 +217,11 @@ $("#chart").bind("plothover", function(event, pos, item) {
 		charttip = $("<div></div>").appendTo('#chart').css('position', 'absolute').css('text-align', 'center').width(200).height(50).css("background-color", "white").fadeTo(0, 0.8).css("border", "3px solid white")
 		chartarr = $("<div></div>").addClass('triangle').appendTo('#chart').fadeTo(0, 0.8)
 	}
-	//console.log("plothover="+item.series.label+" pos="+pos.pageX+' startAngle='+startAngle, item)
+	console.log("plothover="+item.series.label+" pos="+pos.pageX+' startAngle='+startAngle, item)
 	var offset = $(this).offset()
 	var x = pos.pageX - offset.left
 	var y = pos.pageY - offset.top - charttip.height()
-	charttip.css("left", x).css("top", y-56).html(item.series.label)
+	charttip.css("left", x).css("top", y-56).html(Math.round(item.series.percent*100)/100 + "% " + item.series.label)
 	chartarr.css("left", x+13).css("top", y)
 })
 //$("#chart").bind("plotclick", pieClick);
@@ -248,13 +247,49 @@ $("#chart").mouseleave(function() {
 <?php elseif($_REQUEST['type'] == 'flot'): ?>
 
 <?php
+
 $this->widget('application.extensions.EFlot.EFlotGraphWidget', array(
-	'data'=> $qbe->flotData(),
+	'data' => array(),
 	'options'=> array(),
-	'htmlOptions'=>array('style'=>'width:100%;height:600px;'),
+	'htmlOptions'=>array('style'=>'width:100%; height: 600px; display:none'),
 ));
+
 echo $qbe->errorHTML();
 ?>
+
+<div id=flot style="width: 100%; height: 600px"></div>
+
+<script><!--
+var data = <?php echo CJavaScript::encode($qbe->flotData()); ?>;
+
+var first = data[0]['data'][0][0]
+var xaxis = /^\d\d\d\d-\d\d-\d\d$/.test(first)? {mode: 'time', timeformat: '%y/%m/%d'}:
+	/^\d\d:\d\d:\d\d$/.test(first)? {mode: 'time', timeformat: '%H:%M:%S'}:
+	/^\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d$/.test(first)? {mode: 'time', timeformat: '%y/%m/%d %H:%M:%S'}:
+	{}
+
+for(var i=0, n=data.length; i<n; i++) {
+	var d = data[i]['data']
+	data[i].label = '<input type=checkbox> ' + data[i].label
+	for(var j=0, k=d.length; j<k; j++) {
+		var xy = d[j]
+		for(var r=0; r<2; r++) {
+			var u = xy[r]
+			if(u === null) xy[r] = 0
+			else if(/^(\d\d\d\d-\d\d-\d\d|\d\d:\d\d)/.test(u)) xy[r] = new Date(u.replace(/-/g, "/"))
+			else if(typeof(u) === 'string') xy[r] = parseFloat(u)
+		}
+	}
+}
+
+$.plot($("#flot"), data, {
+	points: { show: true },
+	lines: { show: true },
+	yaxis: { label: "ppp"},
+	xaxis: xaxis
+});
+
+--></script>
 
 <?php else: ?>
 

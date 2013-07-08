@@ -55,7 +55,7 @@ class MyFilter {
 
 class Qbe {
 	
-	public $tables, $select, $from, $table, $join, $where, $group, $having, $order, $sql, $content, $column, $user_id, $error, $is_filter;
+	public $tables, $select, $from, $table, $join, $where, $group, $having, $order, $sql, $content, $column, $column_having, $user_id, $error, $is_filter;
 	private $_notab;
 	static $S = null;
 	static $limit_auto_complete = 15;
@@ -115,29 +115,43 @@ class Qbe {
 		$value = trim($value);
 		return $op_;
 	}
-	
+
 	function set_filters($filters) {
 		if(!$filters) return;
-		
+
 		foreach($filters as $name=>$value) {
 			if(trim($value) == "") continue;
+
+			$hav = $this->column_having[$name];
+			$name = $hav[1];
+
 			$name = self::col_quote($name);
 			$op_ = $this->split_filter_op($value);
-			$cond []= "$name$op_".self::quote($value);
+			$cond = "$name $op_ ".self::quote($value);
+
+			if($hav[0]) $having[] = $cond;
+			else $where []= $cond;
 		}
 
-		if(!$cond) return;
+		if(!$where and !$having) return;
 
 		$this->is_filter = 1;
-		
-		if($this->where) array_unshift($cond, "({$this->where})");
-		$this->where = join(" AND ", $cond);
+
+		if($where) {
+			if($this->where) array_unshift($where, "({$this->where})");
+			$this->where = join(" AND ", $where);
+		}
+		else {
+			if($this->having) array_unshift($having, "({$this->having})");
+			$this->having = join(" AND ", $having);
+		}
+
 	}
 
 	function get_sql($without = array(), $diff = false) {
 
 		if($diff) $without = array_diff_assoc(array("select", "from", "where", "group", "having", "order"), $without);
-	
+
 		if(!in_array("select", $without)) $select = "SELECT {$this->select}";
 		if(!in_array("from", $without) && $this->from) $from = " FROM {$this->from}";
 		if(!in_array("where", $without) && $this->where) $where = " WHERE {$this->where}";
@@ -165,12 +179,16 @@ class Qbe {
 				}
 			}
 			$exp = $this->expression($row);
-			if($as) $this->column[] = $this->col_name($row, $k, $exp);
+			if($as) {
+				$this->column[] = $name = $this->col_name($row, ++$k, $exp, $having);
+				$a = explode(":", $name);
+				$this->column_having[$a[0]] = $having;
+			}
 			$sql .= $exp;
 		}
 		return $sql;
 	}
-	
+
 	function col_quote($val) {
 		return "`".preg_replace('/([\\`])/', '\\$1', $val)."`";
 	}
@@ -178,30 +196,41 @@ class Qbe {
 	function quote($val) {
 		return "'".preg_replace('/([\\\'])/', '\\$1', $val)."'";
 	}
-	
+
 	function expressions($rows = null) {
 		if($rows === null) $rows = $this->content['qbe-select'];
 		foreach($rows as $row) {
 			$exp = $this->expression($row);
-			$this->col_name($row, $k, $exp);
+			$this->col_name($row, ++$k, $exp, $having);
 			$expressions[] = $exp;
 		}
 		return $expressions;
 	}
-	
-	function col_name($row, $k, &$exp) {
+
+	function col_name($row, $k, &$exp, &$having) {
 		$last = $row[count($row)-1];
-		if($last["type"]=='const' and $last['name']=='.as') return $last['val'];
+		if($last["type"]=='const' and $last['name']=='.as') {
+			if(count($row) == 2 and $row[0]['type']=='column') {
+				list($tab, $col) = explode(".", $row[0]['name']);
+				$having = array(0, $col, $exp);
+			} else {
+				$a = explode(":", $last['val']);
+				$having = array(1, $a[0], $exp);
+			}
+			return $last['val'];
+		}
 		if(count($row) == 1 and $last['type']=='column') {
 			list($tab, $col) = explode(".", $last['name']);
+			$having = array(0, $col, $exp);
 			return $col;
 		}
-		
+
 		$name = "name$k";
 		$exp .= " AS $name";
+		$having = array(1, $name, $exp);
 		return $name;
 	}
-	
+
 	function expression($row) {
 		foreach($row as $div) {
 			$type = $div['type'];
@@ -244,13 +273,13 @@ class Qbe {
 	}
 
 	function autocomplete($col, $term) {
-	
+
 		$mask = $this->content["square"]["autocomplete"];
-		
+
 		preg_match_all('/\$(\w+)/', $mask, $cols);
 		$cols = $cols[1];
 		array_unshift($cols, $col);
-	
+
 		$qbe_select = $this->content["qbe-select"];
 		$columnAs = $this->columnAs();
 		foreach($cols as $column) {
@@ -259,11 +288,11 @@ class Qbe {
 			$k = array_search($column, $columnAs);
 			$rows[] = $qbe_select[$k];
 		}
-		
+
 		$exp = $this->expressions($rows);
 		$this->split_filter_op($term);
 		$term = self::quote($term."%");
-		
+
 		if( $this->check_group_operation($rows) ) {
 			$column = self::col_quote($col);
 			$having = " HAVING $column like $term";
@@ -271,11 +300,12 @@ class Qbe {
 			$nexp = preg_replace('/as\s+`\w+`$/i', '', $exp[0]);
 			$where = " WHERE $nexp like $term";
 		}
-		
-		if($this->group) $group = " GROUP BY ".$this->group;
-				
+
+		#if($this->group) $group = " GROUP BY ".$this->group;
+		$group = " GROUP BY 1";
+
 		$exp = implode(", ", $exp);
-		
+
 		$sql = "SELECT $exp FROM ".$this->from."$where$group$having limit ".self::$limit_auto_complete;
 		#echo "$sql `$mask`";
 		try {
@@ -287,12 +317,12 @@ class Qbe {
 		}
 
 		$mask = self::cell_tpl($mask);
-		
+
 		foreach($all as $row) $res[] = array(label=>$mask($row), value=>$row[$col]);
-		
+
 		return $res;
 	}
-	
+
 	function join() {
 		$tables = array_keys($this->tables);
 		$len = count($tables);
@@ -380,7 +410,10 @@ class Qbe {
 	function get_count_sql() {
 		$sql = $this->get_sql(array("select", "order"));
 		if($this->group || $this->having) {
-			$count_sql = "SELECT 1 $sql";
+			foreach($this->column_having as $name=>$a) if(preg_match('/\b'.$name.'\b/', $this->group." ".$this->having)) $cols[] = $a[2];
+			$cols = implode(", ", $cols);
+			if(!$cols) $cols = 1;
+			$count_sql = "SELECT $cols $sql";
 			$count_sql = "SELECT count(*) FROM ($count_sql) AS ___A___";
 		} else if(!$this->from) {
 			$count_sql = "SELECT 1";
@@ -555,9 +588,9 @@ class Qbe {
 		foreach($gFootRow as $h=>$row) {
 			$matrix[$end][$h] = $Foot($row);
 		}
-		
+
 		$matrix[$end][0] = $LeftFoot($gLeftFootRow);
-		
+
 		$endj = count($head)+1;		# чтобы внутренние счётчики массивов совпадали с индексами
 		for($i=0; $i<=$end; $i++) {
 			for($j=0; $j<$endj; $j++) {
@@ -565,7 +598,7 @@ class Qbe {
 				$cells[$i][$j] = isset($val)? $val: "-";
 			}
 		}
-		
+
 		//foreach($cells as $x) mem(implode(", ", $x));
 		//show();
 
@@ -612,18 +645,19 @@ class Qbe {
 		$flot_y = $square["flot_y"];
 
 		if(!trim($flot_y)) $flot_y = $slice[0][0];
-		if(!trim($flot_x)) {
+		if(!($flot_x = trim($flot_x))) {
 			$flot_x = array();
 			foreach($slice as $s) if($s[0]!=$flot_y) $flot_x[] = $s[0];
 		} else {
-			$flot_x = split('[ \t]+', $flot_x);
+			$flot_x = explode(" ", $flot_x);
 		}
 
-		foreach($this->data() as $row) {
+		$real = $this->data();
+
+		foreach($real as $row) {
 			$y = $row[$flot_y];
-			foreach($flot_x as $k=>$col) $data[$k]["data"][] = array(0+$y, 0+$row[$col]);
+			foreach($flot_x as $k=>$col) $data[$k]["data"][] = array($y, $row[$col]);
 		}
-
 		foreach($flot_x as $k=>$col) {
 			$c = $column[$col];
 			$data[$k]["label"] = $c[2]? $c[2]: $c[0];
@@ -632,5 +666,4 @@ class Qbe {
 		return $data;
 	}
 
-	
 }
