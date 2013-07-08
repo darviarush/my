@@ -32,11 +32,10 @@ is($myobj->{'x10'}, 10);
 $ret = $rpc->eval("return \$args[0]->x10;", $myobj);
 is($ret, 10);
 
-$rpc->warn(1);
+#$rpc->warn(1);
 $ret = $rpc->eval("return \$args[0]->ex(\$args[1], \$args[2]);", $myobj, 20, 30);
-is($ret, 60);
-#is_deeply($ret, [60]);
-$rpc->warn(0);
+is_deeply($ret, [60]);
+#$rpc->warn(0);
 
 ($ret) = $rpc->eval("return \$args[0]->ex(\$args[1], \$args[2]);", $myobj, 20, 30);
 is($ret, 60);
