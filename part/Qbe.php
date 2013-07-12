@@ -327,7 +327,7 @@ class Qbe {
 		$tables = array_keys($this->tables);
 		$len = count($tables);
 		if(!$tables) {}
-		else if($len == 1) $this->from = $this->table = $tables[0];
+		else if($len == 1) { $this->table = $tables[0]; $this->from = "`".$this->table."`"; }
 		else {
 			sort($tables);
 			if(!self::$S) self::alg();
@@ -356,7 +356,7 @@ class Qbe {
 				}
 			}
 			$this->join = $join;
-			$this->from = $this->table.' '.$this->join; //.' '.json_encode(self::$S);
+			$this->from = '`'.$this->table.'` '.$this->join; //.' '.json_encode(self::$S);
 		}
 	}
 	

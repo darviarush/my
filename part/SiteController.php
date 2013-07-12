@@ -141,8 +141,9 @@ class SiteController extends Controller
 			$model = new Report();
 			$model->name = 'Новый отчёт';
 			$model->content = "{}";
-			$model->sql = '';
-			$model->explainas = '';
+			$model->sql = 'select 1';
+			$model->explainas = '[]';
+			$model->type = 'tab';
 			$model->for_users = 0;
 			$model->author_id = Yii::app()->user->id;
 			$model->now = strftime("%Y-%m-%d %H:%M:%S", time());
