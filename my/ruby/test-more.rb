@@ -1,16 +1,30 @@
 
-at_exit do
+$TestsRun = 0
+$TestsFailed = 0
+$TestsPlan = -1
 
+at_exit do
+	diag("Looks like you failed #{$TestsFailed} test of #{$TestsRun}.") if $TestsFailed != 0
+	diag("Looks like you planned #{$TestsPlan} tests but ran #{$TestsRun}.") if $TestsPlan != $TestsRun
 end
 
 def plan(n)
-	
+	$TestsPlan = n
+	puts "1..#{n}"
+end
+
+def diag(*av)
+	$stderr.puts "# #{av.join("\n# ")}"
 end
 
 def ok(cond, msg = nil)
-	if cond:
+	$TestsRun += 1
+	msg = "#{$TestsRun}#{if msg then " - #{msg}" else '' end}"
+	if cond
+		puts "ok #{msg}"
 	else
-		$stderr.puts
+		$TestsFailed += 1
+		puts "not ok #{msg}"
 	end
 end
 
@@ -24,355 +38,55 @@ def fail(msg = nil)
 end
 
 def is(a, b, msg = nil)
-	if a==b
-	else
-		diag("         got: '$thing1'",
-             "    expected: '$thing2'")
+	cond = a==b
+	ok(cond, msg)
+	if not cond
+		diag("         got: '#{a}'",
+             "    expected: '#{b}'")
 	end
 end
 
-    function isnt ($thing1, $thing2, $name = NULL) {
-        $pass = $this->_compare ('!=',$thing1,$thing2,$name);
-        if (!$pass) {
-            $this->diag("         got: '$thing1'",
-                        "    expected: '$thing2'");
-        }
-        return $pass;
-    }
-
-    function like ($string, $pattern, $name = NULL) {
-        $pass = preg_match($pattern, $string);
-
-        $ok = $this->ok($pass, $name);
-
-        if (!$ok) {
-            $this->diag("                  '$string'");
-            $this->diag("    doesn't match '$pattern'");
-        }
-
-        return $ok;
-    }
-
-    function unlike ($string, $pattern, $name = NULL) {
-        $pass = !preg_match($pattern, $string);
-
-        $ok = $this->ok($pass, $name);
-
-        if (!$ok) {
-            $this->diag("                  '$string'");
-            $this->diag("          matches '$pattern'");
-        }
-
-        return $ok;
-    }
-
-    function cmp_ok ($thing1, $operator, $thing2, $name = NULL) {
-        eval("\$pass = (\$thing1 $operator \$thing2);");
-
-        ob_start();
-        var_dump($thing1);
-        $_thing1 = trim(ob_get_clean());
-
-        ob_start();
-        var_dump($thing2);
-        $_thing2 = trim(ob_get_clean());
-
-        $ok = $this->ok($pass, $name);
-
-        if (!$ok) {
-            $this->diag("         got: $_thing1");
-            $this->diag("    expected: $_thing2");
-        }
-
-        return $ok;
-    }
-
-    function can_ok ($object, $methods) {
-        $pass = TRUE;
-        $errors = array();
-        if (!is_array($methods)) $methods = array($methods);
-
-        foreach ($methods as $method) {
-            if (!method_exists($object, $method)) {
-                $pass = FALSE;
-                $errors[] = "    method_exists(\$object, $method) failed";
-            }
-        }
-
-        $ok = $this->ok($pass, "method_exists(\$object, ...)");
-
-        if (!$ok) {
-            $this->diag($errors);
-        }
-
-        return $ok;
-    }
-
-    function isa_ok ($object, $expected_class, $object_name = 'The object') {
-        $got_class = get_class($object);
-
-        if (version_compare(phpversion(), '5', '>=')) {
-            $pass = ($got_class == $expected_class);
-        } else {
-            $pass = ($got_class == strtolower($expected_class));
-        }
-
-        if ($pass) {
-            $ok = $this->ok(TRUE, "$object_name isa $expected_class");
-        } else {
-            $ok = $this->ok(FALSE, "$object_name isn't a '$expected_class' it's a '$got_class'");
-        }
-
-        return $ok;
-    }
-
-    function _include_fatal_error_handler ($buffer) { 
-
-        // Finish successfully? Carry on.
-        if ($buffer === 'included OK') return '';
-
-        $module = $this->LastModuleTested;
-
-        // Inside ob_start, won't see the output
-        $this->ok(FALSE,"include $module");
-
-        $message = trim($buffer);
-        $unrunmsg = '';
-
-        if ( is_int($this->NumberOfTests) ) {
-            $unrun = $this->NumberOfTests - (int)$this->TestsRun;
-            $plural = $unrun == 1 ? '' : 's';
-            $unrunmsg = "# Looks like ${unrun} planned test${plural} never ran.\n";
-        }
-
-        $gasp = $this->LastFail . "\n"
-              . "#     Tried to include '$module'\n"
-              . "#     $message\n"
-              . $unrunmsg
-              . "# Looks like 1 test aborted before it could finish due to a fatal error!\n"
-              . "Bail out! Terminating prematurely due to fatal error.\n"
-              ;
-
-        return $gasp;
-    }
-
-    function _include_ok ($module,$type) {
-        $path = null;
-        $full_path = null;
-        $retval = 999;
-
-        // Resolve full path, nice to know although only necessary on windows
-        foreach (explode(PATH_SEPARATOR,get_include_path()) as $prefix) {
-            // Repeat existance test and find full path
-            $full_path = realpath($prefix.DIRECTORY_SEPARATOR.$module);
-            $lines = @file($full_path);
-            // Stop on success
-            if ($lines) {
-                $path = $full_path;
-                break;
-            }
-        }
-        // Make sure, if we would include it, it's not going to choke on syntax
-        $error = false;
-        if ($path) {
-            @exec('"'.$this->interp().'" -l '.$path, $bunk, $retval);
-            if ($retval===0) {
-                // Prep in case we hit error handler
-                $this->Backtrace = debug_backtrace();
-                $this->LastModuleTested = $module;
-                ob_start(array($this,'_include_fatal_error_handler'));
-                if ($type === 'include') {
-                    $done = (include $module);
-                } else if ($type === 'require') {
-                    $done = (require $module);
-                } else {
-                    $this->bail("Second argument to _include_ok() must be 'require' or 'include'");
-                }
-                echo "included OK";
-                ob_end_flush();
-                if (!$done) $error = "  Unable to $type '$module'";
-            } else {
-                $error = "  Syntax check for '$module' failed";
-            }
-        } else {
-            $error = "  Cannot find ${type}d file '$module'";
-        }
-
-        $pass = !$retval && $done; 
-        $ok = $this->ok($pass, "$type $module" );
-        if ($error) $this->diag($error);
-        if ($error && $path) $this->diag("  Resolved $module as $full_path");
-        return $ok;
-    }
-
-    function include_ok ($module) {
-    // Test success of including file, but continue testing if possible even if unable to include
-
-        return $this->_include_ok($module,'include');
-    }
-
-
-    function require_ok ($module) {
-    // As include_ok() but exit gracefully if requirement missing
-
-        $ok = $this->_include_ok($module,'require');
-
-        // Stop testing if we fail a require test
-        // Not a bail because you asked for it
-        if ($ok == FALSE) {
-            $this->diag("  Exiting due to missing requirement.");
-            exit();
-        }
-
-        return $ok;
-    } 
-
-    function skip($why, $num) {
-
-        if ($num < 0) $num = 0;
-
-        $this->Skips += $num;
-        $this->SkipReason = $why;
-
-        return TRUE;
-    }
-
-    function eq_array ($thing1, $thing2) {
-    // Deprecated comparison function provided for compatibility
-    // Look only at values, order is important
-        $this->diag(" ! eq_array() is a deprecated comparison function provided for compatibility. Use array_diff() or similar instead.");
-        return !array_diff($thing1, $thing2);
-    }
-
-    function eq_hash ($thing1, $thing2) {
-    // Deprecated comparison function provided for compatibility
-    // Look at keys and values, order is NOT important
-        $this->diag(" ! eq_hash() is a deprecated comparison function provided for compatibility. Use array_diff() or similar instead.");
-        return !array_diff_assoc($thing1, $thing2);
-    }
-
-    function eq_set ($thing1, $thing2, $name = NULL) {
-    // Deprecated comparison function provided for compatibility
-    // Look only at values, duplicates are NOT important
-        $this->diag(" ! eq_set() is a deprecated comparison function provided for compatibility. Use array_diff() or similar instead.");
-        $a = $thing1;
-        sort($a);
-        $b = $thing2;
-        sort($b);
-        return !array_diff($a, $b);
-    }
-
-    function is_deeply ($thing1, $thing2, $name = NULL) {
-
-        $pass = $this->_compare_deeply($thing1, $thing2, $name);
-
-        $ok = $this->ok($pass,$name);
-
-        if (!$ok) {
-            foreach(array($thing1,$thing2) as $it){
-                ob_start();
-                var_dump($it);
-                $dump = ob_get_clean();
-                #$stringified[] = implode("\n#",explode("\n",$dump));
-                $stringified[] = str_replace("\n","\n#   ",$dump);
-            }
-            $this->diag(" wanted:  ".$stringified[0]);
-            $this->diag("    got:  ".$stringified[1]);
-        }
-
-        return $ok;
-    }
-
-    function isnt_deeply ($thing1, $thing2, $name = NULL) {
-
-        $pass = !$this->_compare_deeply($thing1, $thing2, $name);
-
-        $ok = $this->ok($pass,$name);
-
-        if (!$ok) $this->diag("Structures are identical.\n");
-
-        return $ok;
-    }
-
-    function _compare_deeply ($thing1, $thing2) {
-        
-        if (is_array($thing1) && is_array($thing2)) {
-            if ((count($thing1) === count($thing2)) && !array_diff_key($thing1,$thing2)) {
-                foreach(array_keys($thing1) as $key){
-                    $pass = $this->_compare_deeply($thing1[$key],$thing2[$key]);
-                    if(!$pass) {
-                        return FALSE;
-                    }
-                }
-                return TRUE;
-
-            } else {
-                return FALSE;
-            }
-
-        } else {
-            return $thing1 === $thing2;
-        }
-    }
-
-    function todo ($why, $howmany) {
-    // Marks tests as expected to fail, then runs them anyway
-
-        if ($howmany < 0) $howmany = 0;
-
-        $this->Todo = $howmany;
-        $this->TodoReason = $why;
-
-        return TRUE;
-    }
-
-    function todo_skip ($why, $howmany) {
-    // Marks tests as expected to fail, then skips them, as they are expected to also create fatal errors
-
-        $this->todo($why, $howmany);
-        $this->skip($why, $howmany);
-
-        return TRUE;
-    }
-
-    function todo_start ($why) {
-    // as starting a TODO block in Perl- instead of using todo() to set a number of tests, all
-    // tests until todo_end are expected to fail and run anyway
-
-        $this->TodoBlock = FALSE;
-        $this->TodoReason = $why;
-
-        return TRUE;
-    }
-
-    function todo_end () {
-    // as ending a SKIP block in Perl
-
-        $this->TodoBlock = FALSE;
-        unset($this->TodoReason);
-
-        return TRUE;
-    }
-
-    function interp ($new_interp_command=NULL) {
-    // Return the command used to invoke the PHP interpreter, such as for exec()
-
-        if ($new_interp_command == NULL && $this->interp == '') {
-            // In some situations you might need to specify a php interpreter.
-            if ( isset($_SERVER['PHP']) ) {
-                $new_interp_command = escapeshellcmd($_SERVER['PHP']);
-            } else { 
-                $new_interp_command = 'php';
-            }
-        }
-        if ($new_interp_command != $this->interp) {
-            $this->interp = $new_interp_command;
-
-            // Check that we can use the interpreter
-            @exec('"'.$this->interp.'" -v', $bunk, $retval);
-            if ($retval!==0) $this->bail("Unable to run PHP interpreter with '$this->interp'. Try setting the PHP environmant variable to the path of the interpreter.");
-        }
-
-        return $this->interp;
-    }
- 
+def isnt(a, b, msg = nil)
+	cond = a!=b
+	ok(cond, msg)
+	if not cond
+		diag("         got: '#{a}'",
+             "    expected: '#{b}'")
+	end
+end
+
+def like(a, b, msg = nil)
+	cond = b=~a
+	ok(cond, msg)
+	if not cond
+		diag("                  '#{a}'",
+             "    doesn't match '#{b}'")
+	end
+end
+
+def unlike(a, b, msg = nil)
+	cond = b=~a
+	ok(cond, msg)
+	if cond
+		diag("                  '#{a}'",
+             "    doesn't match '#{b}'")
+	end
+end
+
+def isa_ok(a, b, msg = nil)
+	cond = a.is_a? b
+	ok(cond, msg)
+	if not cond
+		diag("                  '#{a}'",
+             "    doesn't match '#{b}'")
+	end
+end
+
+def can_ok(a, b, msg = nil)
+	cond = a.respond_to? b
+	ok(cond, msg)
+	if not cond
+		diag("                  '#{a}'",
+             "    doesn't match '#{b}'")
+	end
+end

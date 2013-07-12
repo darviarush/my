@@ -130,6 +130,7 @@ class RPC
 		lun.call data
 		
 		return self
+	end
 
 	# считывает структуру из потока ввода
 	def unpack 
@@ -142,7 +143,8 @@ class RPC
 		while st.length != 0
 			arr, hash, key, len = st.pop
 
-			while len-- != 0
+			while len != 0
+				len -= 1
 
 				ch = pipe.getc
 				
@@ -205,7 +207,7 @@ class RPC
 		end
 		
 		return ret[0]
-	}
+	end
 
 	# отправляет команду и получает ответ
 	def reply(*av)
@@ -213,7 +215,7 @@ class RPC
 		self.pack(av).pack(@nums)
 		@nums = []
 		self.ret
-	}
+	end
 
 	# отправляет ответ
 	def ok(ret, cmd = "ok")
@@ -221,6 +223,7 @@ class RPC
 		self.pack([cmd, ret]).pack(@nums)
 		@nums = []
 		return self
+	end
 
 	# создаёт экземпляр класса
 	def new_instance(name, *av)
@@ -254,6 +257,11 @@ class RPC
 		for num in nums
 			@objects.delete num.to_i
 		end
+	end
+
+	# возвращает объекты
+	def objects
+		@objects
 	end
 	
 	# получает и возвращает данные и устанавливает ссылочные параметры
@@ -290,34 +298,34 @@ class RPC
 				if cmd == "stub"
 					num, name, args, wantarray = ret
 					ret = @objects[num].send(name, *args)
-					self.pack("ok", ret)
+					self.ok(ret)
 				elsif cmd == "get"
 					num, key = ret
-					self.pack("ok", @objects[num][key])
+					self.ok(@objects[num][key])
 				elsif cmd == "set"
 					num, key, val = ret
 					@objects[num][key] = val
-					self.pack("ok", 1)
+					self.ok(1)
 				elsif cmd == "warn"
 					@warn = ret
-					self.pack("ok", 1)
+					self.ok(1)
 				elsif cmd == "apply"
 					cls, name, args, wantarray = ret
 					ret = Kernel.send(cls).send(name, *args)
-					self.pack("ok", ret)
+					self.ok(ret)
 				elsif cmd == "call"
 					name, args, wantarray = ret
 					ret = Kernel.send(name, *args)
-					self.pack("ok", ret)
+					self.ok(ret)
 				elsif cmd == "eval"
 					buf, args, wantarray = ret
 					ret = eval(buf)
-					self.pack("ok", ret)
+					self.ok(ret)
 				else
 					raise RPCException, "Неизвестная команда `cmd`", caller
 				end
 			rescue SyntaxError, NameError, StandardError => e
-				self.pack("error", e.to_s)
+				self.ok(e.to_s, "error")
 			end
 			self.erase(nums)
 		end

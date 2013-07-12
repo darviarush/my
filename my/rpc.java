@@ -15,6 +15,16 @@ package my.rpc;
 import java;
 
 class RPC {
+	
+	public RPC() {
+		
+	}
+	
+	public RPC(Java.io.IStream R, Java.io.OSream W) {
+		
+	}
+	
+	
 }
 
 // заглушка
@@ -42,6 +52,7 @@ class Stub {
 
 	// регистрирует номер заглушки, для сообщения об освобождении памяти
 	protected void finalize() throws Throwable {
+		this.rpc.nums.push(this.num)
 	}
 
 }

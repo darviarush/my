@@ -652,7 +652,10 @@ class Qbe {
 			$flot_x = explode(" ", $flot_x);
 		}
 
+		$order = $this->order;
+		$this->order = self::col_quote($flot_y);
 		$real = $this->data();
+		$this->order = $order;
 
 		foreach($real as $row) {
 			$y = $row[$flot_y];

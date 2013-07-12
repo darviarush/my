@@ -1076,10 +1076,28 @@ package model::raw;
 # конструктор
 sub new {
 	my ($cls, $val) = @_;
-	bless \$val, $cls;
+	bless [$val], $cls;
 }
 
+
+package model::function;
+# позволяет вставлять любые функции в sql
+
+# конструктор в модели
+sub model::function { bless {}, model::function }
+
+# для вставки функций в sql
+sub AUTOLOAD {
+	print STDERR "model::function->$AUTOLOAD\n";
+	local ($&, $`, $');
+	$AUTOLOAD =~ /[^:]+$/;
+	shift;
+	return model::functor(model::raw->new("$&("), @_, model::raw->new(")"));
+}
+
+
 package model::functor;
+# добавляет операторы
 
 # возвращает функтор
 sub model::functor {
@@ -1096,7 +1114,7 @@ BEGIN {
 		
 		if(ref $operand eq "model::functor") {
 			if($swap) {	push @$self, $operator, @$operand } else { unshift @$self, @$operand, $operator }
-		else {
+		} else {
 			if($swap) {	push @$self, $operator, $operand } else { unshift @$self, $operand, $operator }
 		}
 		
@@ -1125,14 +1143,11 @@ use overload (
 	'""' => sub { "mx=`$_[1]`  model::functor(".@{$_[0]}.")" },
 );
 
-# для вставки функций в sql
-sub AUTOLOAD {
-	print STDERR "echo $AUTOLOAD\n";
-	local ($&, $`, $');
-	$AUTOLOAD =~ /[^:]+$/;
-	return model::functor(model::raw->new("$&("), @_, model::raw->new(")"));
-}
 
 sub DESTROY {}
+
+sub sum { goto &model::function::sum }
+sub count { goto &model::function::count }
+sub avg { goto &model::function::avg }
 
 1;

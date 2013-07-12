@@ -268,9 +268,11 @@ var xaxis = /^\d\d\d\d-\d\d-\d\d$/.test(first)? {mode: 'time', timeformat: '%y/%
 	/^\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d$/.test(first)? {mode: 'time', timeformat: '%y/%m/%d %H:%M:%S'}:
 	{}
 
+var check = []
+
 for(var i=0, n=data.length; i<n; i++) {
 	var d = data[i]['data']
-	data[i].label = '<input type=checkbox> ' + data[i].label
+	data[i].label = '<input type=checkbox checked onchange="replot()"> ' + data[i].label
 	for(var j=0, k=d.length; j<k; j++) {
 		var xy = d[j]
 		for(var r=0; r<2; r++) {
@@ -282,12 +284,30 @@ for(var i=0, n=data.length; i<n; i++) {
 	}
 }
 
-$.plot($("#flot"), data, {
+function replot() {
+
+var real = []
+var ch = $("#flot .legend input[type=checkbox]").each(function(idx) {
+	if(check[idx] = $(this).attr("checked")) real.push(data[idx])
+	else real.push({data:[], label: data[idx]['label']})
+	check[idx] = check[idx]? true: false
+})
+
+if(ch.length == 0) real = data
+
+$.plot($("#flot"), real, {
 	points: { show: true },
 	lines: { show: true },
 	yaxis: { label: "ppp"},
 	xaxis: xaxis
 });
+
+console.log("check="+check)
+$("#flot .legend input[type=checkbox]").each(function(idx) { console.log("ch"+idx+"="+check[idx]); $(this).attr("checked", check[idx]) })
+
+}
+
+replot()
 
 --></script>
 
