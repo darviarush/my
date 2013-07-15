@@ -1,3 +1,4 @@
+#coding: utf-8
 
 $TestsRun = 0
 $TestsFailed = 0
@@ -41,8 +42,8 @@ def is(a, b, msg = nil)
 	cond = a==b
 	ok(cond, msg)
 	if not cond
-		diag("         got: '#{a}'",
-             "    expected: '#{b}'")
+		diag("         got: '#{data_dumper(a)}'",
+             "    expected: '#{data_dumper(b)}'")
 	end
 end
 
@@ -77,8 +78,7 @@ def isa_ok(a, b, msg = nil)
 	cond = a.is_a? b
 	ok(cond, msg)
 	if not cond
-		diag("                  '#{a}'",
-             "    doesn't match '#{b}'")
+		diag("#{a.class.name}->isa(#{b.class.name}) failed")
 	end
 end
 
@@ -86,7 +86,26 @@ def can_ok(a, b, msg = nil)
 	cond = a.respond_to? b
 	ok(cond, msg)
 	if not cond
-		diag("                  '#{a}'",
-             "    doesn't match '#{b}'")
+		diag("#{a.class.name}->can(#{b}) failed")
+	end
+end
+
+def data_dumper(a)
+	if a.class == Hash
+		h = []
+		for k, v in a
+			h.push "#{k}: #{data_dumper(v)}"
+		end
+		return "{#{h.join(", ")}}"
+	elsif a.class == Array
+			h = []
+		for i in a
+			h.push data_dumper(i)
+		end
+		return "[#{h.join(", ")}]"
+	elsif [Fixnum, String, Float].include? a.class
+		return a.to_s.force_encoding(Encoding::UTF_8)
+	else
+		return "#{a.class.name}=0x#{a.object_id.to_s(16)}"
 	end
 end

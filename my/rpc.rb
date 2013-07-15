@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# encoding: UTF-8
+#coding: utf-8
 
 # gem install json
 
@@ -42,7 +42,7 @@ class RPC
 		ch_reader, writer = IO.pipe
 		reader, ch_writer = IO.pipe
 		
-		pid = fork do
+		fork do	# return pid: pid = fork
 			prog = @@PROG[prog]
 			#$LOAD_PATH
 			prog = prog % $LOADED_FEATURES.select { |x| /\/rpc\.pm$/ =~ x }.last if prog
@@ -82,26 +82,25 @@ class RPC
 		is = Hash.new
 		pipe = @w
 		
-		lun = Proc.new do		
-			if hash
-				pipe.puts "s", [key.length].pack("l"), key
-			end
-			
+		lun = Proc.new do | val |
+
 			if [Hash, Array].include? val.class 
 				if n = is[val.object_id]
-					pipe.puts "h", [n].pack("l")
+					pipe.print "h", [n].pack("l")
 				else
 					num = is.length
 					is[val.object_id] = num
 					if val.class == Hash
-						pipe.puts "H", [val.length].pack("l")
+						pipe.print val.class == Hash ? "H": "A", [val.length].pack("l")
 						for k, v in val
 							lun.call k
 							lun.call v
 						end
 					else
-						pipe.puts "A", [val.length].pack("l")
-						val.each(lun)
+						pipe.print "A", [val.length].pack("l")
+						for v in val
+							lun.call v
+						end
 					end
 				end
 			elsif val.class == TrueClass
@@ -111,18 +110,18 @@ class RPC
 			elsif val.class == NilClass
 				pipe.putc "U"
 			elsif val.class == RPCstub
-				pipe.puts "S", [val.__num].pack("l")
+				pipe.print "S", [val.__num].pack("l")
 			elsif val.class == Fixnum			# 0.class.class.ancestors
-				pipe.puts val == 1? "1": val == 0? "0": "i"+[val].pack("l")
+				pipe.print val == 1? "1": val == 0? "0": "i"+[val].pack("l")
 			elsif val.class == String
-				pipe.puts "s", [val.length].pack("l"), val
+				pipe.print "s", [val.length].pack("l"), val
 			elsif val.class == Float
-				pipe.puts "n", [val].pack("d")
+				pipe.print "n", [val].pack("d")
 			else	# несериализируемый object
 				num = @objects.length
 				@objects[num] = val
-				$stderr.puts "#{@role} add(#{num}) ="+objects if @warn >= 2
-				pipe "B", [num].pack("l")
+				$stderr.print "#{@role} add(#{num}) ="+objects if @warn >= 2
+				pipe.print "B", [num].pack("l")
 				#raise RPCException, "Значение неизвестного типа #{val}"
 			end
 		end
@@ -135,7 +134,7 @@ class RPC
 	# считывает структуру из потока ввода
 	def unpack 
 		pipe = @r
-		
+		is = []
 		replace_arr = nil
 		ret = []
 		st = [[ret, 0, 0, 1]]
@@ -194,8 +193,8 @@ class RPC
 				else
 					arr.push val
 				end
-				
-				unless replace_arr.eq? nil
+
+				unless replace_arr == nil
 					st.push [arr, hash, key, len]
 					arr = val
 					is.push arr
@@ -205,13 +204,13 @@ class RPC
 
 			end
 		end
-		
+
 		return ret[0]
 	end
 
 	# отправляет команду и получает ответ
 	def reply(*av)
-		$stderr.puts "#{@role} #{cmd} #{ret}" if @warn
+		$stderr.puts "#{@role} -> #{av}" if @warn
 		self.pack(av).pack(@nums)
 		@nums = []
 		self.ret
@@ -219,7 +218,7 @@ class RPC
 
 	# отправляет ответ
 	def ok(ret, cmd = "ok")
-		$stderr.puts "#{@role} #{cmd} #{ret}" if @warn
+		$stderr.puts "#{@role} #{cmd} -> #{ret}" if @warn
 		self.pack([cmd, ret]).pack(@nums)
 		@nums = []
 		return self
@@ -322,7 +321,7 @@ class RPC
 					ret = eval(buf)
 					self.ok(ret)
 				else
-					raise RPCException, "Неизвестная команда `cmd`", caller
+					raise RPCException, "Неизвестная команда `#{cmd}`", caller
 				end
 			rescue SyntaxError, NameError, StandardError => e
 				self.ok(e.to_s, "error")
@@ -335,7 +334,7 @@ class RPC
 
 	# создаёт заглушку, для удалённого объекта
 	def stub(num)
-		stub = RPCStub.new(self, num)
+		stub = RPCstub.new(self, num)
 		define_finalizer(stub, @finalizer)
 		return stub
 	end
@@ -362,11 +361,12 @@ class RPCstub
 	def [](key)
 		self.rpc.reply("get", @num, key)
 	end
-	
-	def [](key, val)
+
+	def []=(key, val)
 		self.rpc.reply("set", @num, key, val)
 	end
 
+	
 	def __num
 		@num
 	end

@@ -210,12 +210,12 @@ h "t", "тесты [-3..1] [файл теста1 ...] - 1-й параметр - 
 		verbosity => $verbosity,		# -3, 1
 		color => 1,
 		timer => 1,
-		lib => [".", "../../my", "../lib", ".."],
+		lib => $lib = [".", "../../my", "../lib", ".."],
 		exec => sub {
 			my ( $harness, $test_file ) = @_;
 			return [ qw( /usr/bin/env php ), $test_file ] if $test_file =~ /[.]php$/;
 			return [ qw( /usr/bin/env python ), $test_file ] if $test_file =~ /[.]py$/;
-			return [ qw( /usr/bin/env ruby -w ), $test_file ] if $test_file =~ /[.]rb$/;
+			return [ (qw( /usr/bin/env ruby -w ), map {("-I", $_)} @$lib), $test_file ] if $test_file =~ /[.]rb$/;
 			return undef;
 		}
 	});

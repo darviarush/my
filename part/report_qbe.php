@@ -81,6 +81,7 @@ $operators = array("and"=>"<font color=green>И</font>", "or"=>"<font color=red>
 "("=>"(", ")"=>")",
 "is null"=>"Пусто", "is not null"=>"Не пусто",
 "like"=>"≈", "in"=> "В",
+"DISTINCT" => "<font color=red>Отличные</font>",
 ":sum"=>"Сумма", ":count"=>"Количество", ":avg"=>"Среднее арифметическое",
 ":Fn"=>"Fn",
 ".constant" => "<div class='const' onclick='show_field.call(this)'>Константа</div>",

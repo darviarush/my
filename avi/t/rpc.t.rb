@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# encoding: UTF-8
+#coding: utf-8
 
 
 require "ruby/test-more.rb"
@@ -8,7 +8,7 @@ plan(23)
 require "rpc.rb"
 require 'stringio'
 
-f = StringIO.new("", )
+f = StringIO.new("".encode(Encoding::BINARY), "rb+")
 ok(f)
 
 rpc = RPC.new(-1, f, f)
@@ -46,9 +46,9 @@ unpack = rpc.unpack
 dx2 = unpack["f"][2][0]
 
 ok(dx2 == unpack["f"][4]["data_x"])
-can_ok(dx2[2], "RPCstub")
-can_ok(unpack["f"][4]["obj2"], "RPCstub")
-ok(dx2[5] === true)
+isa_ok(dx2[2], RPCstub)
+isa_ok(unpack["f"][4]["obj2"], RPCstub)
+ok(dx2[5] == true, "dx2[5] == true")
 is(unpack["f"][1], obj3)
 is(dx2[0], 1)
 is(unpack["f"][0], 0, "end")
@@ -62,7 +62,7 @@ data["f"][4]["obj2"] = unpack["f"][4]["obj2"]
 is(data, unpack, "end2")
 
 
-rpc = rpc.new('ruby')
+rpc = RPC.new('ruby')
 
 rpc.warn(0)
 

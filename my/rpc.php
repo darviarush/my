@@ -126,7 +126,6 @@ class RPC {
 					$is_assoc = is_assoc($val);
 					
 					fwrite($pipe, ($is_assoc? "H": "A").pack("l", count($val)));
-					#reset($arr);
 					$st []= $arr;
 					$st []= $hash;
 
@@ -174,6 +173,7 @@ class RPC {
 	# считывает структуру из потока ввода
 	function unpack() {
 
+		$pipe = $this->r;
 		$st = array();
 		$arr = array();
 		$hash = 0;
@@ -183,7 +183,7 @@ class RPC {
 			
 			while($len--) {
 
-				$_ = $this->read(1);
+				$_ = fgetc($pipe);
 
 				if($_ == "i") $val = $this->read("l");
 				else if($_ == "s") $val = $this->read($this->read("l"));
