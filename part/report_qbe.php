@@ -134,6 +134,9 @@ var Operators = <?php echo CJavaScript::encode($operators) ?>
 
 </table>
 
+<table style="width:auto">
+<tr id=qbe-join><tr>
+</table>
 
 <a id=preview-show href="#" onclick="$('#preview-sql,#preview-hide').show(); $(this).hide(); return false">Показать sql</a>
 <a id=preview-hide href="#" onclick="$('#preview-sql,#preview-hide').hide(); $('#preview-show').show(); return false" style="display:none">Скрыть sql</a>
@@ -250,6 +253,9 @@ function save() {
 		flot_y: $("#report-flot-y").text(),
 		autocomplete: $("#report-autocomplete").text()
 	}
+	var join_l = {}
+	$("#qbe-join select").each(function() { join_l[this.tab] = this.value })
+	json['qbe-join'] = join_l
 	json = $.toJSON(json)
 
 	$("#preloader").attr("src", "images/saving.gif")
@@ -274,6 +280,7 @@ function save() {
 					$("#error").html('')
 					$("#preloader").attr("src", "images/saved.png")
 					create_explain(j.explain)
+					build_join(j.join_r)
 				}
 				else {
 					if(j) {
@@ -360,7 +367,16 @@ $.extend(odd_even, {
 	}
 })
 
-
+function build_join(join_r) {
+	$("#qbe-join").html("")
+	for(var i=0, n=join_r.length; i<n; i++) {
+		var join = join_r[i]
+		var sel = $("<select onchange='save()'><option value=INNER>INNER<option value=LEFT>LEFT<option value=RIGHT>RIGHT</select>").prop("tab", join[2])
+		var div = $("<td></td>").text(" "+join[2]).prepend(sel)
+		$("#qbe-join").append(div)
+		sel.find("option[value="+join[4]+"]").attr("selected", "selected")
+	}
+}
 
 $(function() {
 //	var ex = $("#ex > div").sortable(conf_ex)
@@ -387,6 +403,9 @@ $(function() {
 			$("#report-"+k.replace(/_/, '-')).text(m)
 		}
 	}
+
+	var join_r = content['qbe-join']
+	delete content['qbe-join']
 
 	for(var i in content) {
 		var x = $("#"+i)
@@ -420,13 +439,12 @@ $(function() {
 			}
 		}
 	}
-	
+
 	for(var i in Sortable) odd_even.call($("#"+i)[0])
 	save_cancel = false
-	
+
 	create_explain(<?php if($model->explainas) echo CJavaScript::encode(json_decode($model->explainas, true)) ?>)
-	
-	
+
 	$("#square td").qtip({
 		content: {
 			text: false // Use each elements title attribute
@@ -442,8 +460,9 @@ $(function() {
 			tip: true,
 			name: 'red'
 		}
-   })
+	})
 	//alert(JSON.stringify(Sortable))
 	//alert($.toJSON(Sortable))
+	build_join(join_r)
 })
 </script>

@@ -54,21 +54,21 @@ class MyFilter {
 }
 
 class Qbe {
-	
-	public $tables, $select, $from, $table, $join, $where, $group, $having, $order, $sql, $content, $column, $column_having, $user_id, $error, $is_filter;
+
+	public $tables, $select, $from, $table, $join, $where, $group, $having, $order, $sql, $content, $column, $column_having, $user_id, $error, $is_filter, $join_r, $join_l;
 	private $_notab;
 	static $S = null;
 	static $limit_auto_complete = 15;
 	static $group_func = array(":sum"=>"Сумма", ":count"=>"Количество", ":avg"=>"Среднее", ":min"=>"Min", ":max"=>"Max", ":std"=>"STD", ":stddev"=>"STDDEV", ":bit_or"=>"bit or", ":bit_and"=>'bit_and', ":group_concat"=>'Объединить');
 	static $filter_op = array('='=>1, '<'=>1, '>'=>1, "<="=>1, ">="=>1);
 	static $rel = null;	// таблицы в ключях должны быть упорядочены в алфавитном порядке: table2.table1, если table2 < table1
-	
-	function __construct($content, $user_id = null) {
-	
+
+	function __construct(&$content, $user_id = null) {
+
 		$arr = json_decode($content, true);
 		$this->content = $arr;
 		$this->user_id = $user_id;
-		
+
 		$this->loadSchema();
 
 		$this->select = $this->join_qbe($arr['qbe-select'], ", ", "as");
@@ -77,7 +77,10 @@ class Qbe {
 		$this->having = $this->join_qbe($arr['qbe-having']);
 		$this->order  = $this->join_qbe($arr['qbe-order'], ", ");
 
+		$this->join_l = $arr['qbe-join'];
 		$this->join();
+		$arr['qbe-join'] = $this->join_r;
+		$content = json_encode($arr);
 
 		$this->sql = $this->get_sql();
 	}
@@ -336,13 +339,13 @@ class Qbe {
 			for($i=1; $i<$len; $i++) {
 				$from = $tables[$i-1];
 				$to = $tables[$i];
-				
+
 				if($bilo[$to]) continue;
-				
-				$j = self::create_join($from, $to);
+
+				$j = $this->create_join($from, $to);
 				if($j) {
 					$bilo[$to] = 1;
-					$join .= $j;
+					$join []= $j;
 				} else {
 					$arr = self::$S["$from.$to"];
 					if($arr[0] != $from) $arr = array_reverse($arr);
@@ -350,30 +353,37 @@ class Qbe {
 						$from1 = $arr[$k-1];
 						$to1 = $arr[$k];
 						if($bilo[$to1]) continue;
-						$join .= self::create_join($from1, $to1);
+						$join []= $this->create_join($from1, $to1);
 						$bilo[$to1] = 1;
 					}
 				}
 			}
-			$this->join = $join;
+
+			$sjoin = "";
+			foreach($join as &$j) $sjoin .= array_shift($j);
+
+			$this->join_r = $join;
+			$this->join = $sjoin;
 			$this->from = '`'.$this->table.'` '.$this->join; //.' '.json_encode(self::$S);
 		}
 	}
-	
+
 	function create_join($from, $to) {
 		$path = self::get_path($from, $to);
 		$rel = self::$rel[$path];
 		if(!$rel) return false;
 		if($from > $to) $rel = array_reverse($rel);
-		return " INNER JOIN `$to` ON `$from`.`{$rel[0]}` = `$to`.`{$rel[1]}`";
+		$join = $this->join_l[$to];
+		if(!$join) $join = "INNER";
+		return array(" $join JOIN `$to` ON `$from`.`{$rel[0]}` = `$to`.`{$rel[1]}`", $from, $rel[0], $to, $rel[1], $join);
 	}
-	
+
 	function get_path($tab1, $tab2) {
 		$path = array($tab1, $tab2);
 		sort($path);
 		return $path[0].".".$path[1];
 	}
-	
+
 	function alg() {
 		foreach(self::$rel as $rel=>$ids) {
 			list($tab1, $tab2) = explode(".", $rel);
@@ -382,8 +392,8 @@ class Qbe {
 			$V[$tab1][$tab2] = 1;
 			$V[$tab2][$tab1] = 1;
 		}
-		
-		foreach($tables as $tab1=>$null) 
+
+		foreach($tables as $tab1=>$null)
 		foreach($tables as $tab2=>$null) {
 			if($tab1 == $tab2 || $V[$tab1][$tab2]) continue;
 			$A = array(array($tab1));

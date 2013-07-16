@@ -128,15 +128,15 @@ class SiteController extends Controller
 		$new_id = Yii::app()->db->createCommand("SELECT LAST_INSERT_ID()")->queryScalar();
 		$this->redirect(Yii::app()->createUrl('site/reportqbe') ."&id=$new_id");
 	}
-	
+
 	public function actionReportQbe()
-	{	
+	{
 		$id = $_REQUEST['id'];
 		if(!$id) {
 			$id = Yii::app()->db->createCommand('select id from report order by id limit 1')->queryScalar();
 			if($id) $this->redirect( Yii::app()->createUrl('site/reportqbe') ."&id=". $id);
 		}
-		
+
 		if(!$id or $id == -1) {
 			$model = new Report();
 			$model->name = 'Новый отчёт';
@@ -215,7 +215,7 @@ class SiteController extends Controller
 		$model->save();
 		$errors = $model->getErrors();
 
-		echo json_encode($errors? array('errors'=>$errors): array('sql'=>$qbe->sql, 'explain'=>$explain));
+		echo json_encode($errors? array('errors'=>$errors): array('sql'=>$qbe->sql, 'explain'=>$explain, 'join_r'=>$qbe->join_r));
 
 	}
 
