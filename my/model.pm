@@ -66,9 +66,9 @@ sub new {
 		type => undef,		# может быть преобразован из serial и bigserial
 		ref_type => undef,	# тип. Будет использоваться для ссылок на этот
 		null => undef,		# 1 или undef
-		default => undef,
-		primary_key => undef,
-		option => undef,
+		default => undef,	# дефолтное значение
+		primary_key => undef,	# 1/0
+		option => undef,		# дополнительные опции, вроде collation=utf-8
 		ref => undef,		# после первого прохода - имя таблицы, при втором - указатель на column id этой таблицы
 		on_update => 'cascade',
 		on_delete => 'cascade',
@@ -843,7 +843,7 @@ sub erase {
 	return model::do($self, $self->esql);
 }
 
-# insert или update, если есть
+# insert или update
 sub store {
 	my ($self, @param) = @_;
 	$self->obj;
@@ -855,7 +855,7 @@ sub store {
 	
 	
 	
-	return model::do($self, $self->esql);
+	return model::do($self, $self->isql);
 }
 
 # возвращает запрос select
@@ -883,16 +883,24 @@ sub isql {
 		$sql = "insert into $table (".join(", ", map { model::escape($_) } @$cols).") values $val";
 		unshift @$set, $cols;
 	}
-	elsif(@$set == 1 and model::is_orm($set->[0])) {
+	elsif(@$set == 1 and model::is_orm($set->[0])) {	# инъекция результата запроса
 		my $q = $set->[0];
 		my $values = model::names($q);
 		$sql = "insert into $table ($values) ".$q->sql;
 	}
-	else {	
+	else {	# обычный с одним набором
 		my ($col, $let);
-		for(my $i=0; $i<@$set; $i+=2) {			
-			$col .= model::escape($set->[$i]);
-			$let .= model::quote($set->[$i+1]);
+		for(my $i=0; $i<@$set; $i+=2) {
+			my ($key, $val) = ($set->[$i], $set->[$i+1]);
+			my $column = ${ref($self)."::$key"};
+			if(ref $val eq "ARRAY") {
+				print STDERR "is val";
+				die "Столбец ".ref($self).".$key не является ссылкой. В то же время ему передаются параметры для insert" unless $column->{ref};
+				$val = $column->{ref}->{model}->id->insert(@$val);
+			}
+			print STDERR "$table.$key=$column";
+			$col .= $column->name;
+			$let .= model::quote($val);
 			last if $i+2 >= @$set;
 			$col .= ", ";
 			$let .= ", ";
@@ -1069,6 +1077,14 @@ sub get {
 	
 	return ;
 }
+
+# срабатывает при удалении
+sub DESTROY {
+	my ($self) = @_;
+	$self->{sth}->finish if $self->{sth};
+}
+
+
 
 # используется для всктавки в sql произвольного текста
 package model::raw;
