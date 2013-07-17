@@ -116,6 +116,7 @@ class Qbe {
 		else if($op[$op1]) { $op_ = $op1; $value = substr($value, 1); }
 		else $op_ = "like";
 		$value = trim($value);
+		if($op_ == 'like') $value .= "%";
 		return $op_;
 	}
 
@@ -148,7 +149,6 @@ class Qbe {
 			if($this->having) array_unshift($having, "({$this->having})");
 			$this->having = join(" AND ", $having);
 		}
-
 	}
 
 	function get_sql($without = array(), $diff = false) {
@@ -294,7 +294,7 @@ class Qbe {
 
 		$exp = $this->expressions($rows);
 		$this->split_filter_op($term);
-		$term = self::quote($term."%");
+		$term = self::quote($term)."%";
 
 		if( $this->check_group_operation($rows) ) {
 			$column = self::col_quote($col);
@@ -308,9 +308,8 @@ class Qbe {
 		$group = " GROUP BY 1";
 
 		$exp = implode(", ", $exp);
-
 		$sql = "SELECT $exp FROM ".$this->from."$where$group$having limit ".self::$limit_auto_complete;
-		#echo "$sql `$mask`";
+		#mem("$sql `$mask`");
 		try {
 			$all = Yii::app()->db->createCommand($sql)->queryAll();
 		} catch(Exception $e) {

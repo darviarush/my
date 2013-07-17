@@ -65,19 +65,19 @@ class SiteController extends Controller
 		$id = $_REQUEST['id']+0;
 		$col = $_REQUEST['col'];
 		$term = $_REQUEST['term'];
-		
+
 		$model = Report::model()->findByPk($id);
 		$qbe = new Qbe($model->content);
-		
+
 		$res = $qbe->autocomplete($col, $term);
-		
+
 		echo json_encode($res, JSON_NUMERIC_CHECK | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 	}
-	
+
 	public function actionReport()
 	{
 		$id = $_REQUEST['id']+0;
-		
+
 		if(!$id) {
 			$sc = Yii::app()->db->createCommand()->select('id')->from('report')->limit(1)->queryScalar();
 			if($sc) $this->redirect(array('site/report', 'id'=>$sc));
@@ -93,7 +93,7 @@ class SiteController extends Controller
 		foreach($reports as $report) {
 			$menu[] = array('label'=>$report["id"].' '.$report['name'], 'url'=>array('site/report', 'id'=>$report["id"]));
 		}
-		
+
 		if(count($reports)==0) $name = "Ещё нет отчётов";
 		else {
 			array_unshift($menu,
@@ -112,11 +112,11 @@ class SiteController extends Controller
 		$this->menu = $menu;
 
 		$model = Report::model()->findByPk($id);
-		
-		$qbe = new Qbe($model->content);		
-		
+
+		$qbe = new Qbe($model->content);
+
 		$qbe->set_filters($_REQUEST['Filter']);
-		
+
 		$this->render('report', array('model'=>$model, 'qbe'=>$qbe));
 	}
 
