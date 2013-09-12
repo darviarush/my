@@ -1,0 +1,238 @@
+
+REM Поиск символа (порядкового номера, последнего)
+a$ =  "информатика"
+For i = 1  To Len(a$)
+  If Mid$(a$, i, 1) = "ф" Then k = i
+Next
+
+REM Повтор заданной буквы в тексте
+a$ =  "информатика"
+k=0
+For i = 1  To Len(a$)
+   If Mid$(a$, i, 1) = "ф" Then k = k+1
+Next
+
+REM Замена символа.
+a$ = "информатика"
+For i = 1  To Len(a$)
+   If Mid$(a$, i, 1) = "о" Then Mid$(a$, i, 1) = "а"
+Next
+
+REM Вставка слова s на i-тое место в текст a$
+a$=Left$(a$,i-1)+s$+Right$(a$,Len(a$)-i)
+
+
+REM Поиск слова (порядкового номера первой буквы,  последнего, если оно встречается несколько раз)
+a$  = "информатика"’ Примеры слов и текстов и в следующих …
+s$ = "форма"
+For i = 1  To Len(a$)
+   if Mid$(st, i, Len(s)) = s$ Then k = i
+Next
+
+REM Замена слова.
+a$  = "сегодня петя идет гулять"
+u$="петя"
+w$="коля"
+   For i = 1  To Len(a$)- Len(u$)+1
+     if Mid$(a$, i, Len(u$)) = u$ then Mid$(a$,  i, Len(u$)) = w$ 
+Next
+
+REM Если длины слов разные, то последовательность операций после then другая:
+
+REM Часть текста до первой буквы заменяемого слова + новое слово + часть текста после заменяемого слова.
+a$ = Left$(a$, i - 1) + w$+Right$(a$, Len(a$) - i + 1 - Len(u$))
+
+REM Этот оператор, конечно, сработает и при одинаковом размере слов.
+
+ 
+
+
+REM Удаление символа
+a$ =  "информатика"
+i = 0
+While i  < Len(a$)
+   i = i + 1
+   If Mid$(a$, i, 1) = "ф" Then
+      st = Left$(a$, i - 1) + Right$(a$, Len(a$)  - i)’ Соединяем части текста до .. и после…
+       i = i + 1
+   End If
+Wend
+ Удаление слова
+a$ =  "информатика"
+s$ = "форма"
+i=0
+While i  < Len(a$) - Len(s$)
+    i = i + 1
+    If Mid$(a$, i, Len(s$)) = s$ Then
+       a$ = Left$(a$, i - 1) + Right$(a$,  Len(a$) - i + 1 - Len(s$)) ’Аналогично 
+       i = i + Len(s$)
+   End If
+Wend
+
+REM ОДНОМЕРНЫЙ (ЛИНЕЙНЫЙ МАССИВ)
+
+
+REM Вывод       массива (индекс, элемент)
+For i = 1 To n
+   Print i, a(i)
+Next 
+
+REM Перестановка       элементов на четных и нечетных местах
+For i = 2  To n Step 2
+    t=a(i-1) ’ t – временная  переменная
+    a(i-1)= a(i)
+    a(i)=t
+Next
+
+REM Вместо 
+t = a(iMax)
+a(iMax) = a(j)
+a(j) = t
+
+REM можно swap a(iMax), a(j)
+
+REM В VB функции swap нет! В следующих примерах swap не используется.
+
+
+REM Сумма массива
+s = 0
+For i = 1  To n
+   s = s + a(i)
+Next
+    
+
+REM Среднее арифметическое
+
+REM См. предыдущий 
+sr=s/n
+
+
+REM Сумма по условию
+s = 0
+For i = 1  To n
+  If a(i) > 0 Then s = s + a(i)’например,  положительных 
+Next
+    
+
+REM Произведение по условию
+p= 1
+For i = 1  To n
+  If a(i) > 0 Then p= p * a(i)
+Next
+    
+
+REM Максимальный (минимальный) элемент
+Max = а(1)
+For i = 2 To n
+  If a(i) > Max Then Max = a(i)
+Next
+    
+
+REM Индекс максимального (минимального)
+iMax = 1
+For i = 2 To n
+  If a(i) > a(iMax) Then iMax = i
+Next
+    
+
+REM Упорядочение массива по убыванию (возрастанию)
+
+REM а) выборкой с поиском индекса максимального (минимального)
+For j = 1  To n - 1
+  iMax = j
+  For i = j + 1 To n
+    If a(i)  > a(iMax) Then iMax = i
+  Next i
+  t =  a(iMax)
+  a(iMax) = a(j)
+  a(j) = t
+Next j
+
+REM б) Методом «всплывающего пузырька»
+For j =  1 To n - 1
+  For i = 1 To n - j
+    If a(i + 1) > a(i) Then
+      t = a(i)
+      a(i) = a(i + 1)
+      a(i + 1) = t
+    End If
+  Next i
+Next j
+
+REM ДВУХМЕРНЫЙ МАССИВ
+
+
+REM Поиск максимального (минимального)
+Max = a(1, 1)
+For j = 1 To n
+  For i = 1 To m
+    If a(j, i) > Max Then Max = a(j, i)
+  Next i
+Next j
+
+REM Поиск индексов максимального (минимального)
+rowMax = 1’Ряд
+colMax = 1’Колонка
+For j = 1 To n
+  For i = 1 To m
+    If a(j, i) > a(rowMax, colMax) Then
+      rowMax = j
+      colMax = i
+    End If
+  Next i
+Next j
+
+REM Суммы по рядам (по столбцам аналогично)
+
+REM а) с выводом на экран
+For j =  1 To n
+  s = 0
+  For i = 1 To m
+    s = s + a(j, i)
+  Next i
+  Print s
+Next j
+
+REM б) с записью в вспомогательный массив
+For j = 1  To n
+  s(j) = 0
+  For i = 1 To m
+    s(j) = s(j) + a(j, i)
+  Next i
+Next j
+
+REM Главная диагональ if i=j …
+
+REM Замена элементов выше диагонали (например, отрицательных нулями)
+For j = 1  To n
+  For i = 1 To m
+    If (i > j) And (a(j, i) < 0) Then  a(j, i) = 0
+  Next i
+Next j 
+ 
+
+
+REM Суммирование двух массивов с одинаковым количеством элементов (умножение аналогично)
+For j = 1  To n
+  For i = 1 To m
+    s(j,i)=a(j, i) +b(j, i) 
+  Next i
+Next j
+
+REM Обмен местами элементов двух массивов с одинаковым количеством элементов
+For j = 1  To n
+  For i = 1 To m
+    t= a(j, i)
+    a(j, i) +b(j, i) 
+    b(j,i)=t
+  Next i
+Next j
+
+REM Вывод на экран (первый столбик – индексы)
+For j = 1  To n
+  Print j;
+  For i = 1 To m
+    Print a(j, i);
+  Next i
+Print
+Next j
