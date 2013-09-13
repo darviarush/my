@@ -1,9 +1,0 @@
-2012-07-07 0.03
-  * updated included lists library
-
-2012-05-06 0.02
-  * renamed StringList_empty() -> StringList_isEmpty()
-  * clean-up
-
-2010-12-17 0.01
-  * initial public release

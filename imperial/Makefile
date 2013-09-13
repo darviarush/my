@@ -1,14 +1,14 @@
 
-CFLAGS = -Wall -O2 -lpcre
+CFLAGS = -Wall -O2 -lpcre -lgc
 
 #$(pcre-config --libs) $(pcre-config --cflags)
 
 im: imperial.c
-		flex -o imperial.lex.c -i $<
-		gcc $(CFLAGS) -o $@ imperial.lex.c
+		flex -o o/imperial.lex.c -i $<
+		gcc $(CFLAGS) -o $@ o/imperial.lex.c
 
 ex: im
-		./im examples/algoritm.im
+		./im examples/manual.im
 
 clean:
-		rm -f im *.lex.c
+		rm -f im o/*

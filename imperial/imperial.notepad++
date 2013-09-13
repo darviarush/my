@@ -1,0 +1,9 @@
+<NotepadPlus>
+    <Session activeView="0">
+        <mainView activeIndex="1">
+            <File firstVisibleLine="32" xOffset="0" scrollWidth="3328" startPos="1770" endPos="1770" selMode="0" lang="&#x041E;&#x0431;&#x044B;&#x0447;&#x043D;&#x044B;&#x0439; &#x0422;&#x0435;&#x043A;&#x0441;&#x0442;" encoding="-1" filename="c:\rea\x.txt" />
+            <File firstVisibleLine="0" xOffset="0" scrollWidth="3328" startPos="0" endPos="0" selMode="0" lang="C" encoding="-1" filename="c:\rea\my\imperial\imperial.c" />
+        </mainView>
+        <subView activeIndex="0" />
+    </Session>
+</NotepadPlus>

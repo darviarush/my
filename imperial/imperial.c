@@ -6,7 +6,9 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <string.h>
+
 #include <pcre.h>
+#include <gc.h>
 
 enum {SPACE = 128, DECIMAL, DOUBLE, WORD, VAR, IF};
 

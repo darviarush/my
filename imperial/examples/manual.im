@@ -1,0 +1,33 @@
+
+
+
+print "Цикл"
+s = 1
+for i=1 to 3
+	s *= i
+
+assert "Факториал трёх" if s = 1
+
+
+for i=1 to 3 do print i
+for i=1 to 3 do print i; : print
+
+for i=1 to 3
+	print i
+
+
+for i=1 to 50 while i<=3
+	print i
+
+
+for i=1 to 3 step 2 do print i
+for i=-3 to 0 step -1 do print i
+
+dim a(3)
+for i=a to end do i=i.i
+
+for i=10 until i>10 do i = i - i.i
+
+swap a, b:
+a, b = b, a
+
